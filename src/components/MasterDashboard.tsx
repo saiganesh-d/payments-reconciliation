@@ -1,0 +1,195 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { motion } from "framer-motion";
+import { Building2, TrendingUp, TrendingDown, CheckCircle2, Clock, AlertTriangle, ArrowRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import DateNavigation from "./DateNavigation";
+import MissedDayBanner from "./MissedDayBanner";
+import { getISTDate, formatCurrency } from "@/lib/utils";
+
+interface BAccountSummary {
+  id: string;
+  name: string;
+  pGroupCount: number;
+  submittedGroups: number;
+  status: string;
+  pTotal: number;
+  nTotal: number;
+  difference: number;
+  nNameCount: number;
+}
+
+export default function MasterDashboard() {
+  const todayDate = getISTDate();
+  const [currentDate, setCurrentDate] = useState(todayDate);
+  const [bAccounts, setBAccounts] = useState<BAccountSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [missedDays, setMissedDays] = useState<{ bAccountId: string; bAccountName: string; date: string }[]>([]);
+  const router = useRouter();
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/master/b-accounts?date=${currentDate}`);
+      const data = await res.json();
+      setBAccounts(data);
+    } catch (err) {
+      console.error("Failed to fetch:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentDate]);
+
+  const fetchMissedDays = useCallback(async () => {
+    try {
+      const res = await fetch("/api/master/missed-days");
+      const data = await res.json();
+      setMissedDays(data);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    fetchMissedDays();
+  }, [fetchMissedDays]);
+
+  const totalPAmount = bAccounts.reduce((sum, ba) => sum + ba.pTotal, 0);
+  const totalNAmount = bAccounts.reduce((sum, ba) => sum + ba.nTotal, 0);
+  const totalDifference = totalPAmount - totalNAmount;
+  const uniqueMissedDates = [...new Set(missedDays.map((d) => d.date))];
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="h-12 shimmer bg-surface rounded-xl" />
+        <div className="h-32 shimmer bg-surface rounded-2xl" />
+        <div className="h-40 shimmer bg-surface rounded-2xl" />
+        <div className="h-40 shimmer bg-surface rounded-2xl" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Date Navigation */}
+      <DateNavigation
+        currentDate={currentDate}
+        onDateChange={setCurrentDate}
+        todayDate={todayDate}
+      />
+
+      {/* Missed Days */}
+      {currentDate === todayDate && (
+        <MissedDayBanner
+          missedDates={uniqueMissedDates}
+          onNavigate={setCurrentDate}
+        />
+      )}
+
+      {/* Overall Summary */}
+      <div className="glass-card p-5 sm:p-6">
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">P-Groups Total</p>
+            <p className="text-xl sm:text-2xl font-bold mt-1" style={{ fontFamily: 'Outfit, sans-serif' }}>
+              {formatCurrency(totalPAmount)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">N-Names Total</p>
+            <p className="text-xl sm:text-2xl font-bold mt-1" style={{ fontFamily: 'Outfit, sans-serif' }}>
+              {formatCurrency(totalNAmount)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">Difference</p>
+            <p className={`text-xl sm:text-2xl font-bold mt-1 ${
+              totalDifference === 0 ? "text-success" : "text-danger"
+            }`} style={{ fontFamily: 'Outfit, sans-serif' }}>
+              {totalDifference === 0 ? "₹0" : formatCurrency(Math.abs(totalDifference))}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* B-Account Cards */}
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>
+          Accounts
+        </h2>
+
+        {bAccounts.map((ba, i) => {
+          const isMatch = ba.difference === 0 && ba.pTotal > 0;
+          const statusColor =
+            ba.status === "FINALIZED" ? "text-success" : ba.status === "PARTIAL" ? "text-warning" : "text-muted";
+          const StatusIcon =
+            ba.status === "FINALIZED" ? CheckCircle2 : ba.status === "PARTIAL" ? Clock : AlertTriangle;
+
+          return (
+            <motion.button
+              key={ba.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              onClick={() => router.push(`/master/b/${ba.id}?date=${currentDate}`)}
+              className="w-full glass-card p-5 text-left hover:border-accent/30 transition-all group"
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center">
+                    <Building2 className="w-5 h-5 text-accent" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>
+                      {ba.name}
+                    </h3>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <StatusIcon className={`w-3.5 h-3.5 ${statusColor}`} />
+                      <span className={`text-xs ${statusColor}`}>
+                        {ba.submittedGroups}/{ba.pGroupCount} groups
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5 text-muted group-hover:text-accent transition-colors" />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-background/50 rounded-xl p-3">
+                  <p className="text-[10px] text-muted uppercase">P-Total</p>
+                  <p className="text-sm font-bold mt-0.5">{formatCurrency(ba.pTotal)}</p>
+                </div>
+                <div className="bg-background/50 rounded-xl p-3">
+                  <p className="text-[10px] text-muted uppercase">N-Total</p>
+                  <p className="text-sm font-bold mt-0.5">{formatCurrency(ba.nTotal)}</p>
+                </div>
+                <div className={`rounded-xl p-3 ${
+                  isMatch ? "bg-success/10" : ba.pTotal === 0 && ba.nTotal === 0 ? "bg-background/50" : "bg-danger/10"
+                }`}>
+                  <p className="text-[10px] text-muted uppercase">Diff</p>
+                  <p className={`text-sm font-bold mt-0.5 ${
+                    isMatch ? "text-success" : ba.pTotal === 0 && ba.nTotal === 0 ? "text-muted" : "text-danger"
+                  }`}>
+                    {ba.difference === 0 ? "₹0" : formatCurrency(Math.abs(ba.difference))}
+                  </p>
+                </div>
+              </div>
+            </motion.button>
+          );
+        })}
+
+        {bAccounts.length === 0 && (
+          <div className="text-center py-12 text-muted">
+            <p className="text-sm">No accounts configured yet</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

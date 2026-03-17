@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  MASTER
+  B_ACCOUNT
+}
+
+enum SubmissionStatus {
+  PENDING
+  SUBMITTED
+}
+
+enum DayStatus {
+  NOT_STARTED
+  PARTIAL
+  FINALIZED
+}
+
+model pc_users {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  password   String
+  name       String
+  role       Role
+  bAccountId String?
+  bAccount   pc_b_accounts? @relation(fields: [bAccountId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model pc_b_accounts {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  users     pc_users[]
+  pGroups   pc_p_groups[]
+  nNames    pc_n_names[]
+  createdAt DateTime @default(now())
+}
+
+model pc_p_groups {
+  id         String   @id @default(cuid())
+  name       String
+  bAccountId String
+  bAccount   pc_b_accounts @relation(fields: [bAccountId], references: [id])
+  members    pc_p_group_members[]
+  createdAt  DateTime @default(now())
+
+  @@unique([bAccountId, name])
+}
+
+model pc_p_group_members {
+  id        String   @id @default(cuid())
+  name      String
+  note      String?
+  pGroupId  String
+  pGroup    pc_p_groups @relation(fields: [pGroupId], references: [id])
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([pGroupId, name])
+}
+
+model pc_n_names {
+  id         String   @id @default(cuid())
+  name       String
+  bAccountId String
+  bAccount   pc_b_accounts @relation(fields: [bAccountId], references: [id])
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@unique([bAccountId, name])
+}
+
+model pc_daily_entries {
+  id         String    @id @default(cuid())
+  date       DateTime  @db.Date
+  bAccountId String
+  pGroupId   String
+  memberId   String
+  amount     Int       @default(0)
+  isLocked   Boolean   @default(false)
+  lockedAt   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([date, memberId])
+}
+
+model pc_daily_n_entries {
+  id         String   @id @default(cuid())
+  date       DateTime @db.Date
+  bAccountId String
+  nNameId    String
+  amount     Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([date, nNameId])
+}
+
+model pc_group_submissions {
+  id          String           @id @default(cuid())
+  date        DateTime         @db.Date
+  bAccountId  String
+  pGroupId    String
+  status      SubmissionStatus @default(PENDING)
+  submittedAt DateTime?
+
+  @@unique([date, pGroupId])
+}
+
+model pc_day_submissions {
+  id          String    @id @default(cuid())
+  date        DateTime  @db.Date
+  bAccountId  String
+  status      DayStatus @default(NOT_STARTED)
+  finalizedAt DateTime?
+
+  @@unique([date, bAccountId])
+}
+
+model pc_audit_logs {
+  id         String   @id @default(cuid())
+  timestamp  DateTime @default(now())
+  action     String
+  actorId    String
+  entityType String
+  entityId   String
+  oldValue   String?
+  newValue   String?
+}
