@@ -3,7 +3,7 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { motion } from "framer-motion";
-import { Building2, CheckCircle2, Clock, AlertTriangle, ArrowRight, ChevronDown } from "lucide-react";
+import { Building2, CheckCircle2, Clock, AlertTriangle, ArrowRight, ChevronDown, BarChart3 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import DateNavigation from "./DateNavigation";
 import DifferenceChart from "./DifferenceChart";
@@ -126,15 +126,22 @@ export default function MasterDashboard() {
         )}
       </div>
 
-      {/* User Fluctuation Analysis — collapsible */}
+      {/* Analyze — icon trigger */}
       <div className="glass-card overflow-hidden">
         <button
           onClick={() => setShowFluctuation(!showFluctuation)}
           className="w-full flex items-center justify-between p-4 hover:bg-surface-hover/50 transition-colors"
         >
-          <span className="text-sm font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>
-            User Fluctuation Analysis
-          </span>
+          <div className="flex items-center gap-2.5">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              showFluctuation ? "bg-accent/10" : "bg-surface"
+            }`}>
+              <BarChart3 className={`w-4 h-4 ${showFluctuation ? "text-accent" : "text-muted"}`} />
+            </div>
+            <span className="text-sm font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>
+              Analyze User Fluctuations
+            </span>
+          </div>
           <motion.div animate={{ rotate: showFluctuation ? 180 : 0 }} transition={{ duration: 0.2 }}>
             <ChevronDown className="w-4 h-4 text-muted" />
           </motion.div>

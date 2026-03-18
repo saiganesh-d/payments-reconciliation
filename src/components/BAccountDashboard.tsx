@@ -50,25 +50,23 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
   const [currentVersion, setCurrentVersion] = useState(1);
   const [submitting, setSubmitting] = useState(false);
 
-  // SWR: fetch version statuses
   const versionsKey = `/api/entries/versions?date=${currentDate}&bAccountId=${bAccountId}`;
   const { data: versionStatuses = [] } = useSWR<VersionStatus[]>(versionsKey, fetcher, {
     revalidateOnFocus: true,
     dedupingInterval: 5000,
   });
 
-  // SWR: auto-cache, deduplicate, revalidate on focus
   const entriesKey = `/api/entries?date=${currentDate}&version=${currentVersion}`;
   const { data, isLoading, mutate: mutateEntries } = useSWR<EntriesData>(entriesKey, fetcher, {
     revalidateOnFocus: true,
     dedupingInterval: 5000,
   });
 
-
   const groups = data?.groups || [];
   const entries = data?.entries || [];
   const groupSubmissions = data?.groupSubmissions || [];
   const daySubmission = data?.daySubmission || null;
+
   const handleAmountChange = async (memberId: string, amount: number, pGroupId: string) => {
     mutateEntries(
       (prev) => {
@@ -89,7 +87,8 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
     });
   };
 
-  const handleLockEntry = async (memberId: string) => {
+  // Returns true on success, false on failure (for optimistic UI)
+  const handleLockEntry = async (memberId: string): Promise<boolean> => {
     const res = await fetch("/api/entries/lock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -109,10 +108,12 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
         },
         { revalidate: false }
       );
+      return true;
     }
+    return false;
   };
 
-  const handleUnlockEntry = async (memberId: string) => {
+  const handleUnlockEntry = async (memberId: string): Promise<boolean> => {
     const res = await fetch("/api/entries/b-unlock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -128,11 +129,21 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
             entries: prev.entries.map((e) =>
               e.memberId === memberId ? { ...e, isLocked: false } : e
             ),
+            // Revert group submission if it was submitted
+            groupSubmissions: prev.groupSubmissions.map((s) => {
+              const entry = prev.entries.find((e) => e.memberId === memberId);
+              if (entry && s.pGroupId === entry.pGroupId && s.status === "SUBMITTED") {
+                return { ...s, status: "PENDING" };
+              }
+              return s;
+            }),
           };
         },
         { revalidate: false }
       );
+      return true;
     }
+    return false;
   };
 
   const handleSubmitGroup = async (pGroupId: string) => {
@@ -173,10 +184,7 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
           (prev) => prev ? { ...prev, daySubmission: { status: "FINALIZED" } } : prev,
           { revalidate: false }
         );
-        // Revalidate versions and missed days
         mutate(versionsKey);
-        mutate("/api/master/missed-days");
-        // Auto-switch to next version if available
         if (currentVersion < 3) {
           setCurrentVersion(currentVersion + 1);
         }
@@ -194,7 +202,6 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
   const allGroupsSubmitted = groups.length > 0 && groupsDone === groups.length;
   const isDayFinalized = daySubmission?.status === "FINALIZED";
 
-  // Version tab logic
   const isVersionEnabled = (v: number) => {
     if (v === 1) return true;
     const prevStatus = versionStatuses.find((vs) => vs.version === v - 1);

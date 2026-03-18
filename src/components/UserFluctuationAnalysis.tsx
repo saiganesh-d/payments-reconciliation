@@ -1,17 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import useSWR from "swr";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid, Cell, Legend,
 } from "recharts";
-import { AlertTriangle, CheckCircle2, TrendingUp } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
 import { getISTDate, formatCurrency } from "@/lib/utils";
 
@@ -49,95 +43,56 @@ interface GroupOption {
   name: string;
 }
 
-type RangeOption = "7d" | "10d" | "custom";
+type ChartView = "line" | "bar";
 
-const LINE_COLORS = [
+const COLORS = [
   "#F0BD60", "#FB7185", "#4ADE80", "#60A5FA", "#C084FC",
   "#F97316", "#2DD4BF", "#E879F9", "#FBBF24", "#A78BFA",
+  "#34D399", "#F472B6", "#38BDF8", "#A3E635", "#818CF8",
 ];
-
-function Sparkline({ amounts }: { amounts: number[] }) {
-  if (amounts.length < 2) return null;
-  const max = Math.max(...amounts);
-  const min = Math.min(...amounts);
-  const range = max - min || 1;
-  const w = 50;
-  const h = 20;
-  const points = amounts
-    .map((a, i) => {
-      const x = (i / (amounts.length - 1)) * w;
-      const y = h - ((a - min) / range) * (h - 4) - 2;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg width={w} height={h} className="shrink-0">
-      <polyline
-        points={points}
-        fill="none"
-        stroke="var(--color-accent)"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function getSeverityColor(pct: number): string {
-  if (pct > 100) return "text-danger";
-  if (pct >= 50) return "text-warning";
-  return "text-success";
-}
-
-function getSeverityDot(pct: number): string {
-  if (pct > 100) return "bg-danger";
-  if (pct >= 50) return "bg-warning";
-  return "bg-success";
-}
 
 export default function UserFluctuationAnalysis() {
   const todayDate = getISTDate();
   const [bAccountId, setBAccountId] = useState<string>("");
-  const [range, setRange] = useState<RangeOption>("7d");
-  const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState("");
-  const [cutoff, setCutoff] = useState(50);
   const [groupFilter, setGroupFilter] = useState<string>("");
-  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [selectedUser, setSelectedUser] = useState<string>("");
+  const [chartView, setChartView] = useState<ChartView>("line");
 
-  // Fetch B-accounts for dropdown
+  // Fetch B-accounts
   const { data: bAccounts = [] } = useSWR<BAccountOption[]>(
     `/api/master/b-accounts?date=${todayDate}`,
     fetcher,
     { dedupingInterval: 30000, revalidateOnFocus: false }
   );
 
-  // Compute date range
-  const { startDate, endDate } = useMemo(() => {
-    if (range === "custom") {
-      return { startDate: customStart, endDate: customEnd };
+  // Auto-select first B-account (B1)
+  useEffect(() => {
+    if (bAccounts.length > 0 && !bAccountId) {
+      setBAccountId(bAccounts[0].id);
     }
+  }, [bAccounts, bAccountId]);
+
+  // Date range: last 7 days
+  const { startDate, endDate } = useMemo(() => {
     const end = new Date();
     const start = new Date();
-    start.setDate(start.getDate() - (range === "10d" ? 10 : 7));
+    start.setDate(start.getDate() - 7);
     return {
       startDate: start.toISOString().split("T")[0],
       endDate: end.toISOString().split("T")[0],
     };
-  }, [range, customStart, customEnd]);
+  }, []);
 
-  const shouldFetch = bAccountId && startDate && endDate;
-
+  // Fetch fluctuation data (all users, topN=50 for broader view)
   const { data, isLoading } = useSWR<FluctuationData>(
-    shouldFetch
-      ? `/api/master/user-fluctuations?bAccountId=${bAccountId}&startDate=${startDate}&endDate=${endDate}&fluctuationCutoff=${cutoff}&topN=10${groupFilter ? `&pGroupId=${groupFilter}` : ""}`
+    bAccountId
+      ? `/api/master/user-fluctuations?bAccountId=${bAccountId}&startDate=${startDate}&endDate=${endDate}&fluctuationCutoff=0&topN=50${groupFilter ? `&pGroupId=${groupFilter}` : ""}`
       : null,
     fetcher,
     { dedupingInterval: 30000, revalidateOnFocus: false }
   );
 
-  // Extract group options from b-accounts data
+  // Groups for filter
   const { data: detailData } = useSWR<{ bAccount: { pGroups: GroupOption[] } }>(
     bAccountId ? `/api/master/b-account-detail?bAccountId=${bAccountId}&date=${todayDate}` : null,
     fetcher,
@@ -145,48 +100,74 @@ export default function UserFluctuationAnalysis() {
   );
   const groups: GroupOption[] = detailData?.bAccount?.pGroups || [];
 
-  const toggleUser = (memberId: string) => {
-    setSelectedUsers((prev) => {
-      const next = new Set(prev);
-      if (next.has(memberId)) {
-        next.delete(memberId);
-      } else {
-        next.add(memberId);
-      }
-      return next;
-    });
-  };
+  const allUsers = data?.topFluctuators || [];
+  const activeDates = data?.activeDates || [];
 
-  // Build chart data
-  const chartData = useMemo(() => {
-    if (!data) return [];
-    const selectedFluctuators = data.topFluctuators.filter((f) =>
-      selectedUsers.has(f.memberId)
-    );
-    if (selectedFluctuators.length === 0) return [];
+  // Selected user data
+  const selectedUserData = selectedUser
+    ? allUsers.find((u) => u.memberId === selectedUser)
+    : null;
 
-    return data.activeDates.map((date) => {
-      const point: Record<string, string | number> = {
-        date,
-        label: date.slice(5), // MM-DD
-      };
-      for (const f of selectedFluctuators) {
-        const entry = f.dailyAmounts.find((d) => d.date === date);
-        point[f.memberId] = entry?.amount || 0;
+  // === CHART DATA BUILDERS ===
+
+  // Level 1: All users — line chart (X=dates, each line=user) or heat-style bar
+  const allUsersLineData = useMemo(() => {
+    if (!activeDates.length || !allUsers.length) return [];
+    return activeDates.map((date) => {
+      const point: Record<string, string | number> = { date, label: date.slice(5) };
+      for (const u of allUsers) {
+        const entry = u.dailyAmounts.find((d) => d.date === date);
+        point[u.memberId] = entry?.amount || 0;
       }
       return point;
     });
-  }, [data, selectedUsers]);
+  }, [activeDates, allUsers]);
 
-  const selectedFluctuators = data?.topFluctuators.filter((f) =>
-    selectedUsers.has(f.memberId)
-  ) || [];
+  // Bar chart: X=user names, grouped bars per date
+  const allUsersBarData = useMemo(() => {
+    if (!allUsers.length || !activeDates.length) return [];
+    return allUsers.map((u) => {
+      const point: Record<string, string | number> = { name: u.memberName, memberId: u.memberId };
+      for (const date of activeDates) {
+        const entry = u.dailyAmounts.find((d) => d.date === date);
+        point[date] = entry?.amount || 0;
+      }
+      return point;
+    });
+  }, [allUsers, activeDates]);
+
+  // Level 3: Single user bar data
+  const singleUserBarData = useMemo(() => {
+    if (!selectedUserData) return [];
+    return selectedUserData.dailyAmounts.map((d) => ({
+      date: d.date,
+      label: d.date.slice(5),
+      amount: d.amount,
+    }));
+  }, [selectedUserData]);
+
+  // Heat map data: users as rows, cells colored by amount intensity
+  const heatMapData = useMemo(() => {
+    if (!allUsers.length || !activeDates.length) return [];
+    const maxAmount = Math.max(...allUsers.flatMap((u) => u.dailyAmounts.map((d) => d.amount)), 1);
+    return allUsers.map((u) => ({
+      ...u,
+      cells: activeDates.map((date) => {
+        const entry = u.dailyAmounts.find((d) => d.date === date);
+        const amount = entry?.amount || 0;
+        const intensity = amount / maxAmount;
+        return { date, amount, intensity };
+      }),
+    }));
+  }, [allUsers, activeDates]);
+
+  const selectedBName = bAccounts.find((b) => b.id === bAccountId)?.name || "";
 
   return (
     <div className="space-y-4">
-      {/* Filter Bar */}
+      {/* Filters */}
       <div className="flex flex-wrap gap-2 items-end">
-        {/* B-Account dropdown */}
+        {/* B-Account */}
         <div className="flex flex-col gap-1">
           <label className="text-[10px] text-muted uppercase tracking-wider">B-Account</label>
           <select
@@ -194,282 +175,277 @@ export default function UserFluctuationAnalysis() {
             onChange={(e) => {
               setBAccountId(e.target.value);
               setGroupFilter("");
-              setSelectedUsers(new Set());
+              setSelectedUser("");
             }}
-            className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs min-w-[120px]"
+            className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs min-w-[100px]"
           >
-            <option value="">Select...</option>
             {bAccounts.map((ba) => (
-              <option key={ba.id} value={ba.id}>
-                {ba.name}
-              </option>
+              <option key={ba.id} value={ba.id}>{ba.name}</option>
             ))}
           </select>
         </div>
 
-        {/* Range buttons */}
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-muted uppercase tracking-wider">Range</label>
-          <div className="flex gap-1">
-            {(["7d", "10d", "custom"] as RangeOption[]).map((r) => (
-              <button
-                key={r}
-                onClick={() => setRange(r)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
-                  range === r
-                    ? "bg-accent text-background"
-                    : "bg-surface text-muted border border-border"
-                }`}
-              >
-                {r === "custom" ? "Custom" : r.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Custom date inputs */}
-        {range === "custom" && (
-          <>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-muted uppercase tracking-wider">From</label>
-              <input
-                type="date"
-                value={customStart}
-                onChange={(e) => setCustomStart(e.target.value)}
-                className="bg-surface border border-border rounded-lg px-2 py-1 text-xs"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-muted uppercase tracking-wider">To</label>
-              <input
-                type="date"
-                value={customEnd}
-                onChange={(e) => setCustomEnd(e.target.value)}
-                className="bg-surface border border-border rounded-lg px-2 py-1 text-xs"
-              />
-            </div>
-          </>
-        )}
-
-        {/* Cutoff input */}
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-muted uppercase tracking-wider">Cutoff</label>
-          <div className="flex items-center gap-1">
-            <input
-              type="number"
-              value={cutoff}
-              onChange={(e) => setCutoff(parseInt(e.target.value) || 0)}
-              className="bg-surface border border-border rounded-lg px-2 py-1 text-xs w-16 text-center"
-              min={0}
-            />
-            <span className="text-xs text-muted">%</span>
-          </div>
-        </div>
-
-        {/* Group filter */}
-        {bAccountId && groups.length > 0 && (
+        {/* Group */}
+        {groups.length > 0 && (
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-muted uppercase tracking-wider">Group</label>
             <select
               value={groupFilter}
               onChange={(e) => {
                 setGroupFilter(e.target.value);
-                setSelectedUsers(new Set());
+                setSelectedUser("");
               }}
-              className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs min-w-[120px]"
+              className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs min-w-[100px]"
             >
               <option value="">All Groups</option>
               {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
+                <option key={g.id} value={g.id}>{g.name}</option>
               ))}
             </select>
           </div>
         )}
+
+        {/* User */}
+        {allUsers.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-muted uppercase tracking-wider">User</label>
+            <select
+              value={selectedUser}
+              onChange={(e) => setSelectedUser(e.target.value)}
+              className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs min-w-[100px]"
+            >
+              <option value="">All Users</option>
+              {allUsers.map((u) => (
+                <option key={u.memberId} value={u.memberId}>{u.memberName}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Chart View Toggle */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] text-muted uppercase tracking-wider">View</label>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setChartView("line")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                chartView === "line" ? "bg-accent text-background" : "bg-surface text-muted border border-border"
+              }`}
+            >
+              Line
+            </button>
+            <button
+              onClick={() => setChartView("bar")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                chartView === "bar" ? "bg-accent text-background" : "bg-surface text-muted border border-border"
+              }`}
+            >
+              Bar
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Content area */}
-      {!bAccountId ? (
-        <div className="text-center py-8 text-muted">
-          <TrendingUp className="w-8 h-8 mx-auto mb-2 opacity-40" />
-          <p className="text-sm">Select a B-Account to analyze user fluctuations</p>
-        </div>
-      ) : isLoading ? (
+      {/* Content */}
+      {isLoading ? (
         <div className="space-y-3">
-          <div className="h-10 shimmer bg-surface rounded-xl" />
-          <div className="h-[200px] shimmer bg-surface rounded-xl" />
-          <div className="h-[280px] shimmer bg-surface rounded-xl" />
+          <div className="h-[300px] shimmer bg-surface rounded-xl" />
         </div>
-      ) : data ? (
-        <>
-          {/* Fluctuation Alert Box */}
-          {data.topFluctuators.length > 0 ? (
-            <div className="bg-surface/50 rounded-xl border border-border">
-              <div className="p-3 border-b border-border/50">
-                <h3 className="text-sm font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>
-                  Flagged Users{" "}
-                  <span className="text-danger">
-                    ({data.flaggedCount} of {data.totalMembers})
-                  </span>
-                </h3>
-              </div>
-              <div className="max-h-[400px] overflow-y-auto divide-y divide-border/30">
-                {data.topFluctuators.map((f, i) => {
-                  const isSelected = selectedUsers.has(f.memberId);
-                  const isFlagged = f.fluctuationPct >= cutoff;
-
-                  return (
-                    <button
-                      key={f.memberId}
-                      onClick={() => toggleUser(f.memberId)}
-                      className={`w-full flex items-center gap-3 p-3 text-left transition-colors min-h-[44px] ${
-                        isSelected
-                          ? "bg-accent/5 hover:bg-accent/10"
-                          : "hover:bg-surface-hover/50"
-                      }`}
-                    >
-                      {/* Severity dot */}
-                      <div
-                        className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                          isFlagged ? getSeverityDot(f.fluctuationPct) : "bg-success"
-                        }`}
-                      />
-
-                      {/* Name + group */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-semibold truncate">
-                            {f.memberName}
-                          </span>
-                          <span className="text-[10px] text-muted px-1.5 py-0.5 bg-surface rounded">
-                            {f.groupName}
-                          </span>
-                        </div>
-                        {/* Mobile: show stats below name */}
-                        <div className="flex items-center gap-2 mt-0.5 sm:hidden">
-                          <span className="text-[10px] text-muted">
-                            Avg {formatCurrency(f.avgAmount)}
-                          </span>
-                          <span className="text-[10px] text-muted">
-                            {formatCurrency(f.minAmount)}-{formatCurrency(f.maxAmount)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Desktop stats */}
-                      <span className="text-xs text-muted hidden sm:block whitespace-nowrap">
-                        Avg {formatCurrency(f.avgAmount)}
-                      </span>
-                      <span className="text-xs text-muted hidden sm:block whitespace-nowrap">
-                        {formatCurrency(f.minAmount)} - {formatCurrency(f.maxAmount)}
-                      </span>
-
-                      {/* Fluctuation % */}
-                      <span
-                        className={`text-xs font-bold shrink-0 ${
-                          isFlagged ? getSeverityColor(f.fluctuationPct) : "text-success"
-                        }`}
-                      >
-                        {f.fluctuationPct}%
-                      </span>
-
-                      {/* Sparkline */}
-                      <Sparkline amounts={f.dailyAmounts.map((d) => d.amount)} />
-
-                      {/* Selected indicator */}
-                      {isSelected && (
-                        <CheckCircle2 className="w-4 h-4 text-accent shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+      ) : !data || allUsers.length === 0 ? (
+        <div className="text-center py-8 text-muted">
+          <p className="text-sm">No data available for the last 7 days</p>
+        </div>
+      ) : selectedUser && selectedUserData ? (
+        /* === LEVEL 3: Single user selected === */
+        <div className="bg-surface/50 rounded-xl border border-border p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>
+              {selectedUserData.memberName}
+              <span className="text-muted font-normal ml-2 text-xs">{selectedUserData.groupName}</span>
+            </h3>
+            <div className="flex items-center gap-3 text-xs text-muted">
+              <span>Avg: {formatCurrency(selectedUserData.avgAmount)}</span>
+              <span>Range: {formatCurrency(selectedUserData.minAmount)} - {formatCurrency(selectedUserData.maxAmount)}</span>
+              <span className={selectedUserData.fluctuationPct > 100 ? "text-danger font-bold" : selectedUserData.fluctuationPct >= 50 ? "text-warning font-bold" : "text-success font-bold"}>
+                {selectedUserData.fluctuationPct}%
+              </span>
             </div>
-          ) : (
-            <div className="text-center py-8 bg-success/5 rounded-xl border border-success/20">
-              <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-success" />
-              <p className="text-sm text-success font-medium">
-                No users exceed the {cutoff}% fluctuation threshold
-              </p>
-            </div>
-          )}
-
-          {/* Multi-User Line Chart */}
-          {selectedFluctuators.length > 0 && chartData.length > 0 && (
-            <div className="bg-surface/50 rounded-xl border border-border p-4">
-              <h3
-                className="text-sm font-semibold mb-3"
-                style={{ fontFamily: "Outfit, sans-serif" }}
-              >
-                Daily Amounts Comparison
-              </h3>
-              <ResponsiveContainer width="100%" height={320}>
-                <LineChart
-                  data={chartData}
-                  margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="var(--color-border)"
-                    opacity={0.5}
-                  />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fontSize: 10, fill: "var(--color-muted)" }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 10, fill: "var(--color-muted)" }}
-                    tickFormatter={(v: number) =>
-                      v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`
-                    }
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "var(--color-surface)",
-                      borderRadius: "12px",
-                      border: "1px solid var(--color-border)",
-                      fontSize: "12px",
-                    }}
-                    labelStyle={{ color: "var(--color-muted)", marginBottom: "4px" }}
+          </div>
+          <ResponsiveContainer width="100%" height={280}>
+            {chartView === "bar" ? (
+              <BarChart data={singleUserBarData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--color-muted)" }} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
+                <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "12px", border: "1px solid var(--color-border)", fontSize: "12px" }} formatter={((v: number) => [formatCurrency(v), "Amount"]) as any} />
+                <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
+                  {singleUserBarData.map((_, i) => (
+                    <Cell key={i} fill={COLORS[0]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            ) : (
+              <LineChart data={singleUserBarData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--color-muted)" }} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
+                <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "12px", border: "1px solid var(--color-border)", fontSize: "12px" }} formatter={((v: number) => [formatCurrency(v), "Amount"]) as any} />
+                <Line type="monotone" dataKey="amount" stroke={COLORS[0]} strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              </LineChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      ) : groupFilter ? (
+        /* === LEVEL 2: Group selected, no specific user === */
+        <div className="space-y-4">
+          <div className="bg-surface/50 rounded-xl border border-border p-4">
+            <h3 className="text-sm font-semibold mb-3" style={{ fontFamily: "Outfit, sans-serif" }}>
+              {selectedBName} — {groups.find((g) => g.id === groupFilter)?.name || "Group"} — Last 7 Days
+            </h3>
+            {chartView === "line" ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={allUsersLineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--color-muted)" }} />
+                  <YAxis tick={{ fontSize: 10, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
+                  <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "12px", border: "1px solid var(--color-border)", fontSize: "12px" }}
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    formatter={((value: any, name: any) => {
-                      const num = typeof value === "number" ? value : 0;
-                      const f = selectedFluctuators.find((fl) => fl.memberId === String(name || ""));
-                      return [formatCurrency(num), f?.memberName || String(name || "")];
-                    }) as any}
+                    formatter={((v: any, name: any) => { const u = allUsers.find(u => u.memberId === String(name)); return [formatCurrency(Number(v)), u?.memberName || ""]; }) as any}
                   />
-                  {selectedFluctuators.map((f, i) => (
-                    <Line
-                      key={f.memberId}
-                      type="monotone"
-                      dataKey={f.memberId}
-                      name={f.memberId}
-                      stroke={LINE_COLORS[i % LINE_COLORS.length]}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4 }}
-                    />
+                  <Legend formatter={(value: string) => { const u = allUsers.find(u => u.memberId === value); return u?.memberName || value; }} />
+                  {allUsers.map((u, i) => (
+                    <Line key={u.memberId} type="monotone" dataKey={u.memberId} stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
                   ))}
                 </LineChart>
               </ResponsiveContainer>
-
-              {/* Legend */}
-              <div className="flex flex-wrap gap-3 mt-3 px-1">
-                {selectedFluctuators.map((f, i) => (
-                  <div key={f.memberId} className="flex items-center gap-1.5">
-                    <div
-                      className="w-2.5 h-2.5 rounded-full"
-                      style={{ backgroundColor: LINE_COLORS[i % LINE_COLORS.length] }}
-                    />
-                    <span className="text-xs text-muted">{f.memberName}</span>
+            ) : (
+              /* Bar chart: one chart per date, bars = users */
+              <div className="space-y-4 max-h-[500px] overflow-y-auto">
+                {activeDates.map((date) => (
+                  <div key={date} className="bg-background/50 rounded-xl p-3">
+                    <p className="text-xs text-muted mb-2 font-medium">{date.slice(5)}</p>
+                    <ResponsiveContainer width="100%" height={140}>
+                      <BarChart data={allUsers.map((u, i) => ({
+                        name: u.memberName,
+                        amount: u.dailyAmounts.find((d) => d.date === date)?.amount || 0,
+                        fill: COLORS[i % COLORS.length],
+                      }))} margin={{ top: 5, right: 5, left: -15, bottom: 0 }}>
+                        <XAxis dataKey="name" tick={{ fontSize: 9, fill: "var(--color-muted)" }} interval={0} angle={-30} textAnchor="end" height={40} />
+                        <YAxis tick={{ fontSize: 9, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
+                        <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "8px", border: "1px solid var(--color-border)", fontSize: "11px" }} formatter={((v: number) => [formatCurrency(v), "Amount"]) as any} />
+                        <Bar dataKey="amount" radius={[3, 3, 0, 0]}>
+                          {allUsers.map((_, i) => (
+                            <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* === LEVEL 1: B-Account only — heat map + line/bar chart === */
+        <div className="space-y-4">
+          {/* Heat Map */}
+          <div className="bg-surface/50 rounded-xl border border-border p-4 overflow-x-auto">
+            <h3 className="text-sm font-semibold mb-3" style={{ fontFamily: "Outfit, sans-serif" }}>
+              {selectedBName} — All Users — Last 7 Days
+            </h3>
+            <div className="min-w-[400px]">
+              {/* Header: dates */}
+              <div className="flex items-center gap-0.5 mb-1">
+                <div className="w-[80px] sm:w-[100px] shrink-0" />
+                {activeDates.map((d) => (
+                  <div key={d} className="flex-1 text-center text-[9px] text-muted">{d.slice(5)}</div>
+                ))}
+              </div>
+              {/* Rows: users */}
+              <div className="space-y-0.5">
+                {heatMapData.map((user) => (
+                  <button
+                    key={user.memberId}
+                    onClick={() => setSelectedUser(user.memberId)}
+                    className="w-full flex items-center gap-0.5 hover:bg-surface-hover/50 rounded-lg transition-colors py-0.5"
+                  >
+                    <div className="w-[80px] sm:w-[100px] shrink-0 text-left">
+                      <span className="text-[10px] font-medium truncate block">{user.memberName}</span>
+                      <span className="text-[8px] text-muted">{user.groupName}</span>
+                    </div>
+                    {user.cells.map((cell) => (
+                      <div
+                        key={cell.date}
+                        className="flex-1 h-7 rounded-sm flex items-center justify-center text-[8px] font-bold"
+                        style={{
+                          backgroundColor: cell.amount === 0
+                            ? "rgba(160, 168, 196, 0.1)"
+                            : `rgba(74, 222, 128, ${0.15 + cell.intensity * 0.7})`,
+                          color: cell.intensity > 0.5 ? "#fff" : "var(--color-muted)",
+                        }}
+                        title={`${user.memberName}: ${formatCurrency(cell.amount)} on ${cell.date}`}
+                      >
+                        {cell.amount > 0 ? (cell.amount >= 1000 ? `${(cell.amount / 1000).toFixed(0)}k` : cell.amount) : ""}
+                      </div>
+                    ))}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
-        </>
-      ) : null}
+          </div>
+
+          {/* Line / Bar Chart */}
+          <div className="bg-surface/50 rounded-xl border border-border p-4">
+            <h3 className="text-sm font-semibold mb-3" style={{ fontFamily: "Outfit, sans-serif" }}>
+              {chartView === "line" ? "Daily Trends" : "User Comparison"}
+            </h3>
+            {chartView === "line" ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={allUsersLineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--color-muted)" }} />
+                  <YAxis tick={{ fontSize: 10, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
+                  <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "12px", border: "1px solid var(--color-border)", fontSize: "12px" }}
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    formatter={((v: any, name: any) => { const u = allUsers.find(u => u.memberId === String(name)); return [formatCurrency(Number(v)), u?.memberName || ""]; }) as any}
+                  />
+                  {allUsers.map((u, i) => (
+                    <Line key={u.memberId} type="monotone" dataKey={u.memberId} stroke={COLORS[i % COLORS.length]} strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={allUsersBarData} margin={{ top: 10, right: 10, left: -10, bottom: 40 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
+                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: "var(--color-muted)" }} interval={0} angle={-45} textAnchor="end" />
+                  <YAxis tick={{ fontSize: 10, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
+                  <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "12px", border: "1px solid var(--color-border)", fontSize: "12px" }} />
+                  {activeDates.map((date, i) => (
+                    <Bar key={date} dataKey={date} name={date.slice(5)} fill={COLORS[i % COLORS.length]} radius={[2, 2, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+            {/* Legend for line chart */}
+            {chartView === "line" && allUsers.length <= 20 && (
+              <div className="flex flex-wrap gap-2 mt-3 px-1">
+                {allUsers.map((u, i) => (
+                  <button
+                    key={u.memberId}
+                    onClick={() => setSelectedUser(u.memberId)}
+                    className="flex items-center gap-1 hover:opacity-80 transition-opacity"
+                  >
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                    <span className="text-[10px] text-muted">{u.memberName}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

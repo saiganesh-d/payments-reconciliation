@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, CheckCircle2, Clock, AlertTriangle, Lock, Unlock, Info, ChevronDown } from "lucide-react";
+import LockToggle from "./LockToggle";
 import { useRouter } from "next/navigation";
 import DateNavigation from "./DateNavigation";
 import { getISTDate, formatCurrency } from "@/lib/utils";
@@ -93,6 +94,8 @@ export default function BAccountDetail({
   const [lockingN, setLockingN] = useState<string | null>(null);
   const [lockingQ, setLockingQ] = useState<string | null>(null);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+  const [optimisticNLocks, setOptimisticNLocks] = useState<Record<string, boolean>>({});
+  const [optimisticQLocks, setOptimisticQLocks] = useState<Record<string, boolean>>({});
   const [selectedVersion, setSelectedVersion] = useState(initialVersion || 1);
   const router = useRouter();
 
@@ -131,73 +134,97 @@ export default function BAccountDetail({
     }
   }, [data?.qEntries, selectedVersion]);
 
-  // Lock N-entry: saves first, then locks
+  // Focus next master entry input
+  const focusNextMasterEntry = (currentId: string) => {
+    const allInputs = Array.from(document.querySelectorAll<HTMLInputElement>("[data-master-input]"));
+    const idx = allInputs.findIndex((el) => el.dataset.masterInput === currentId);
+    if (idx >= 0 && idx < allInputs.length - 1) {
+      allInputs[idx + 1].focus();
+      allInputs[idx + 1].select();
+    }
+  };
+
+  // Lock N-entry: optimistic, saves first, then locks
   const handleNLock = async (nNameId: string, action: "lock" | "unlock") => {
-    if (action === "lock") {
-      setLockingN(nNameId);
-      try {
-        // Save first
+    const newState = action === "lock";
+    setOptimisticNLocks((prev) => ({ ...prev, [nNameId]: newState }));
+    if (newState) focusNextMasterEntry(`n-${nNameId}`);
+
+    try {
+      if (action === "lock") {
+        setLockingN(nNameId);
         await fetch("/api/master/n-entries", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            date: currentDate, bAccountId, nNameId,
-            amount: nAmounts[nNameId] || 0,
-            version: selectedVersion,
-          }),
+          body: JSON.stringify({ date: currentDate, bAccountId, nNameId, amount: nAmounts[nNameId] || 0, version: selectedVersion }),
         });
-        // Then lock
-        await fetch("/api/master/n-entries/lock", {
+        const res = await fetch("/api/master/n-entries/lock", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ date: currentDate, nNameId, action: "lock", version: selectedVersion }),
         });
-        mutateDetail();
-      } finally {
         setLockingN(null);
+        if (!res.ok) {
+          setOptimisticNLocks((prev) => { const n = { ...prev }; delete n[nNameId]; return n; });
+          return;
+        }
+      } else {
+        const res = await fetch("/api/master/n-entries/lock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: currentDate, nNameId, action: "unlock", version: selectedVersion }),
+        });
+        if (!res.ok) {
+          setOptimisticNLocks((prev) => { const n = { ...prev }; delete n[nNameId]; return n; });
+          return;
+        }
       }
-    } else {
-      const res = await fetch("/api/master/n-entries/lock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: currentDate, nNameId, action: "unlock", version: selectedVersion }),
-      });
-      if (res.ok) mutateDetail();
+      setOptimisticNLocks((prev) => { const n = { ...prev }; delete n[nNameId]; return n; });
+      mutateDetail();
+    } catch {
+      setOptimisticNLocks((prev) => { const n = { ...prev }; delete n[nNameId]; return n; });
     }
   };
 
-  // Lock Q-entry: saves first, then locks
+  // Lock Q-entry: optimistic, saves first, then locks
   const handleQLock = async (qNameId: string, action: "lock" | "unlock") => {
-    if (action === "lock") {
-      setLockingQ(qNameId);
-      try {
-        // Save first
+    const newState = action === "lock";
+    setOptimisticQLocks((prev) => ({ ...prev, [qNameId]: newState }));
+    if (newState) focusNextMasterEntry(`q-${qNameId}`);
+
+    try {
+      if (action === "lock") {
+        setLockingQ(qNameId);
         await fetch("/api/master/q-entries", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            date: currentDate, bAccountId, qNameId,
-            amount: qAmounts[qNameId] || 0,
-            version: selectedVersion,
-          }),
+          body: JSON.stringify({ date: currentDate, bAccountId, qNameId, amount: qAmounts[qNameId] || 0, version: selectedVersion }),
         });
-        // Then lock
-        await fetch("/api/master/q-entries/lock", {
+        const res = await fetch("/api/master/q-entries/lock", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ date: currentDate, qNameId, action: "lock", version: selectedVersion }),
         });
-        mutateDetail();
-      } finally {
         setLockingQ(null);
+        if (!res.ok) {
+          setOptimisticQLocks((prev) => { const n = { ...prev }; delete n[qNameId]; return n; });
+          return;
+        }
+      } else {
+        const res = await fetch("/api/master/q-entries/lock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: currentDate, qNameId, action: "unlock", version: selectedVersion }),
+        });
+        if (!res.ok) {
+          setOptimisticQLocks((prev) => { const n = { ...prev }; delete n[qNameId]; return n; });
+          return;
+        }
       }
-    } else {
-      const res = await fetch("/api/master/q-entries/lock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: currentDate, qNameId, action: "unlock", version: selectedVersion }),
-      });
-      if (res.ok) mutateDetail();
+      setOptimisticQLocks((prev) => { const n = { ...prev }; delete n[qNameId]; return n; });
+      mutateDetail();
+    } catch {
+      setOptimisticQLocks((prev) => { const n = { ...prev }; delete n[qNameId]; return n; });
     }
   };
 
@@ -347,20 +374,21 @@ export default function BAccountDetail({
           {bAccount.nNames.map((nName) => {
             const currentAmount = nAmounts[nName.id] ?? 0;
             const savedEntry = versionNEntries.find((e) => e.nNameId === nName.id);
-            const isLocked = savedEntry?.isLocked || false;
+            const isLocked = nName.id in optimisticNLocks ? optimisticNLocks[nName.id] : (savedEntry?.isLocked || false);
 
             return (
               <div key={nName.id} className={`rounded-xl transition-all ${
                 isLocked ? "bg-background border border-success/20" : "bg-background border border-border"
               }`}>
                 <div className="flex items-center gap-3 p-3 sm:p-4">
-                  <div className="w-[100px] sm:w-[140px] shrink-0">
+                  <div className="w-[80px] sm:w-[140px] shrink-0">
                     <span className={`text-sm font-medium ${isLocked ? "text-muted" : ""}`}>{nName.name}</span>
                   </div>
                   <div className="flex-1 flex items-center justify-center">
-                    <div className="relative w-full max-w-[200px]">
+                    <div className="relative w-full max-w-[180px]">
                       <input
                         type="number"
+                        data-master-input={`n-${nName.id}`}
                         value={currentAmount || ""}
                         onChange={(e) => setNAmounts((prev) => ({ ...prev, [nName.id]: parseInt(e.target.value) || 0 }))}
                         onKeyDown={(e) => {
@@ -382,20 +410,11 @@ export default function BAccountDetail({
                       />
                     </div>
                   </div>
-                  <button
-                    onClick={() => isLocked ? handleNLock(nName.id, "unlock") : handleNLock(nName.id, "lock")}
+                  <LockToggle
+                    isLocked={isLocked}
                     disabled={!isLocked && !currentAmount || lockingN === nName.id}
-                    className={`p-3 rounded-xl transition-all shrink-0 ${
-                      isLocked
-                        ? "bg-success/10 text-success hover:bg-warning/10 hover:text-warning"
-                        : currentAmount
-                          ? "bg-accent/10 text-accent hover:bg-accent/20"
-                          : "bg-surface text-muted/30 cursor-not-allowed"
-                    }`}
-                    title={isLocked ? "Click to unlock" : currentAmount ? "Press Enter or click to lock" : "Enter amount first"}
-                  >
-                    {isLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
-                  </button>
+                    onToggle={() => handleNLock(nName.id, isLocked ? "unlock" : "lock")}
+                  />
                 </div>
               </div>
             );
@@ -428,20 +447,21 @@ export default function BAccountDetail({
           {bAccount.qNames.map((qName) => {
             const currentAmount = qAmounts[qName.id] ?? 0;
             const savedEntry = versionQEntries.find((e) => e.qNameId === qName.id);
-            const isLocked = savedEntry?.isLocked || false;
+            const isLocked = qName.id in optimisticQLocks ? optimisticQLocks[qName.id] : (savedEntry?.isLocked || false);
 
             return (
               <div key={qName.id} className={`rounded-xl transition-all ${
                 isLocked ? "bg-background border border-success/20" : "bg-background border border-border"
               }`}>
                 <div className="flex items-center gap-3 p-3 sm:p-4">
-                  <div className="w-[100px] sm:w-[140px] shrink-0">
+                  <div className="w-[80px] sm:w-[140px] shrink-0">
                     <span className={`text-sm font-medium ${isLocked ? "text-muted" : ""}`}>{qName.name}</span>
                   </div>
                   <div className="flex-1 flex items-center justify-center">
-                    <div className="relative w-full max-w-[200px]">
+                    <div className="relative w-full max-w-[180px]">
                       <input
                         type="number"
+                        data-master-input={`q-${qName.id}`}
                         value={currentAmount || ""}
                         onChange={(e) => setQAmounts((prev) => ({ ...prev, [qName.id]: parseInt(e.target.value) || 0 }))}
                         onKeyDown={(e) => {
@@ -463,20 +483,11 @@ export default function BAccountDetail({
                       />
                     </div>
                   </div>
-                  <button
-                    onClick={() => isLocked ? handleQLock(qName.id, "unlock") : handleQLock(qName.id, "lock")}
+                  <LockToggle
+                    isLocked={isLocked}
                     disabled={!isLocked && !currentAmount || lockingQ === qName.id}
-                    className={`p-3 rounded-xl transition-all shrink-0 ${
-                      isLocked
-                        ? "bg-success/10 text-success hover:bg-warning/10 hover:text-warning"
-                        : currentAmount
-                          ? "bg-accent/10 text-accent hover:bg-accent/20"
-                          : "bg-surface text-muted/30 cursor-not-allowed"
-                    }`}
-                    title={isLocked ? "Click to unlock" : currentAmount ? "Press Enter or click to lock" : "Enter amount first"}
-                  >
-                    {isLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
-                  </button>
+                    onToggle={() => handleQLock(qName.id, isLocked ? "unlock" : "lock")}
+                  />
                 </div>
               </div>
             );
