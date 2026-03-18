@@ -99,13 +99,14 @@ model pc_daily_n_entries {
   date       DateTime  @db.Date
   bAccountId String
   nNameId    String
+  version    Int       @default(1)
   amount     Int       @default(0)
   isLocked   Boolean   @default(false)
   lockedAt   DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@unique([date, nNameId])
+  @@unique([date, nNameId, version])
 }
 
 model pc_group_submissions {
@@ -147,13 +148,14 @@ model pc_daily_q_entries {
   date       DateTime  @db.Date
   bAccountId String
   qNameId    String
+  version    Int       @default(1)
   amount     Int       @default(0)
   isLocked   Boolean   @default(false)
   lockedAt   DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  @@unique([date, qNameId])
+  @@unique([date, qNameId, version])
 }
 
 model pc_audit_logs {

@@ -22,15 +22,8 @@ interface Group {
   members: Member[];
 }
 
-interface NName {
-  id: string;
-  name: string;
-}
-
-interface QName {
-  id: string;
-  name: string;
-}
+interface NName { id: string; name: string }
+interface QName { id: string; name: string }
 
 interface BAccount {
   id: string;
@@ -54,6 +47,7 @@ interface NEntry {
   nNameId: string;
   isLocked?: boolean;
   amount: number;
+  version: number;
 }
 
 interface QEntry {
@@ -61,6 +55,7 @@ interface QEntry {
   qNameId: string;
   isLocked?: boolean;
   amount: number;
+  version: number;
 }
 
 interface GroupSubmission {
@@ -86,9 +81,11 @@ interface DetailData {
 export default function BAccountDetail({
   bAccountId,
   initialDate,
+  initialVersion,
 }: {
   bAccountId: string;
   initialDate?: string;
+  initialVersion?: number;
 }) {
   const todayDate = getISTDate();
   const [currentDate, setCurrentDate] = useState(initialDate || todayDate);
@@ -98,7 +95,7 @@ export default function BAccountDetail({
   const [savingQ, setSavingQ] = useState<string | null>(null);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pgroups" | "nnames" | "qnames">("pgroups");
-  const [selectedVersion, setSelectedVersion] = useState(1);
+  const [selectedVersion, setSelectedVersion] = useState(initialVersion || 1);
   const router = useRouter();
 
   const detailKey = `/api/master/b-account-detail?bAccountId=${bAccountId}&date=${currentDate}`;
@@ -114,27 +111,27 @@ export default function BAccountDetail({
   const groupSubmissions = data?.groupSubmissions || [];
   const daySubmissions = data?.daySubmissions || [];
 
-  // Sync nAmounts when data loads
+  // Sync nAmounts when data or version changes
   useEffect(() => {
     if (data?.nEntries) {
       const amounts: Record<string, number> = {};
-      data.nEntries.forEach((ne) => {
-        amounts[ne.nNameId] = ne.amount;
-      });
+      data.nEntries
+        .filter((ne) => ne.version === selectedVersion)
+        .forEach((ne) => { amounts[ne.nNameId] = ne.amount; });
       setNAmounts(amounts);
     }
-  }, [data?.nEntries]);
+  }, [data?.nEntries, selectedVersion]);
 
-  // Sync qAmounts when data loads
+  // Sync qAmounts when data or version changes
   useEffect(() => {
     if (data?.qEntries) {
       const amounts: Record<string, number> = {};
-      data.qEntries.forEach((qe) => {
-        amounts[qe.qNameId] = qe.amount;
-      });
+      data.qEntries
+        .filter((qe) => qe.version === selectedVersion)
+        .forEach((qe) => { amounts[qe.qNameId] = qe.amount; });
       setQAmounts(amounts);
     }
-  }, [data?.qEntries]);
+  }, [data?.qEntries, selectedVersion]);
 
   const handleSaveNEntry = async (nNameId: string) => {
     setSavingN(nNameId);
@@ -143,26 +140,12 @@ export default function BAccountDetail({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          date: currentDate,
-          bAccountId,
-          nNameId,
+          date: currentDate, bAccountId, nNameId,
           amount: nAmounts[nNameId] || 0,
+          version: selectedVersion,
         }),
       });
-
-      mutateDetail(
-        (prev) => {
-          if (!prev) return prev;
-          const existing = prev.nEntries.find((e) => e.nNameId === nNameId);
-          const newNEntries = existing
-            ? prev.nEntries.map((e) =>
-                e.nNameId === nNameId ? { ...e, amount: nAmounts[nNameId] || 0 } : e
-              )
-            : [...prev.nEntries, { nNameId, amount: nAmounts[nNameId] || 0 }];
-          return { ...prev, nEntries: newNEntries };
-        },
-        { revalidate: false }
-      );
+      mutateDetail();
     } finally {
       setSavingN(null);
     }
@@ -172,23 +155,9 @@ export default function BAccountDetail({
     const res = await fetch("/api/master/n-entries/lock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: currentDate, nNameId, action }),
+      body: JSON.stringify({ date: currentDate, nNameId, action, version: selectedVersion }),
     });
-
-    if (res.ok) {
-      mutateDetail(
-        (prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            nEntries: prev.nEntries.map((e) =>
-              e.nNameId === nNameId ? { ...e, isLocked: action === "lock" } : e
-            ),
-          };
-        },
-        { revalidate: false }
-      );
-    }
+    if (res.ok) mutateDetail();
   };
 
   const handleSaveQEntry = async (qNameId: string) => {
@@ -198,26 +167,12 @@ export default function BAccountDetail({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          date: currentDate,
-          bAccountId,
-          qNameId,
+          date: currentDate, bAccountId, qNameId,
           amount: qAmounts[qNameId] || 0,
+          version: selectedVersion,
         }),
       });
-
-      mutateDetail(
-        (prev) => {
-          if (!prev) return prev;
-          const existing = prev.qEntries.find((e) => e.qNameId === qNameId);
-          const newQEntries = existing
-            ? prev.qEntries.map((e) =>
-                e.qNameId === qNameId ? { ...e, amount: qAmounts[qNameId] || 0 } : e
-              )
-            : [...prev.qEntries, { qNameId, amount: qAmounts[qNameId] || 0 }];
-          return { ...prev, qEntries: newQEntries };
-        },
-        { revalidate: false }
-      );
+      mutateDetail();
     } finally {
       setSavingQ(null);
     }
@@ -227,37 +182,19 @@ export default function BAccountDetail({
     const res = await fetch("/api/master/q-entries/lock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: currentDate, qNameId, action }),
+      body: JSON.stringify({ date: currentDate, qNameId, action, version: selectedVersion }),
     });
-
-    if (res.ok) {
-      mutateDetail(
-        (prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            qEntries: prev.qEntries.map((e) =>
-              e.qNameId === qNameId ? { ...e, isLocked: action === "lock" } : e
-            ),
-          };
-        },
-        { revalidate: false }
-      );
-    }
+    if (res.ok) mutateDetail();
   };
 
   const handleUnlock = async (entryId: string) => {
     if (!confirm("Unlock this entry? The B-account user will need to re-lock it.")) return;
-
     const res = await fetch("/api/entries/unlock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ entryId }),
     });
-
-    if (res.ok) {
-      mutateDetail();
-    }
+    if (res.ok) mutateDetail();
   };
 
   if (isLoading) {
@@ -274,13 +211,15 @@ export default function BAccountDetail({
     return <div className="text-center text-muted py-12">Account not found</div>;
   }
 
-  // P-total sums ALL versions for reconciliation
+  // Totals: ALL versions summed for reconciliation
   const pTotal = entries.reduce((sum, e) => sum + e.amount, 0);
-  const nTotal = Object.values(nAmounts).reduce((sum, a) => sum + (a || 0), 0);
-  const qTotal = Object.values(qAmounts).reduce((sum, a) => sum + (a || 0), 0);
+  const nTotal = nEntries.reduce((sum, e) => sum + e.amount, 0);
+  const qTotal = qEntries.reduce((sum, e) => sum + e.amount, 0);
 
-  // Filter entries by selected version for P-groups display
+  // Filtered by selected version for display
   const versionEntries = entries.filter((e) => e.version === selectedVersion);
+  const versionNEntries = nEntries.filter((e) => e.version === selectedVersion);
+  const versionQEntries = qEntries.filter((e) => e.version === selectedVersion);
   const versionGroupSubs = groupSubmissions.filter((s) => s.version === selectedVersion);
 
   const submittedGroupIds = versionGroupSubs
@@ -288,11 +227,39 @@ export default function BAccountDetail({
     .map((s) => s.pGroupId);
   const allGroupsSubmitted = bAccount.pGroups.length > 0 && submittedGroupIds.length === bAccount.pGroups.length;
 
-  // Version statuses from daySubmissions
   const getVersionStatus = (v: number) => {
     const ds = daySubmissions.find((d) => d.version === v);
     return ds?.status || "NOT_STARTED";
   };
+
+  // Version selector shared component
+  const VersionSelector = () => (
+    <div className="flex items-center gap-2 mb-4">
+      <span className="text-xs text-muted font-medium uppercase tracking-wider">Version:</span>
+      <div className="flex gap-1">
+        {[1, 2, 3].map((v) => {
+          const status = getVersionStatus(v);
+          const isFinalized = status === "FINALIZED";
+          return (
+            <button
+              key={v}
+              onClick={() => setSelectedVersion(v)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                selectedVersion === v
+                  ? "bg-accent text-background"
+                  : isFinalized
+                    ? "bg-success/10 text-success border border-success/20"
+                    : "bg-surface text-muted border border-border hover:text-foreground"
+              }`}
+            >
+              {isFinalized && selectedVersion !== v && <CheckCircle2 className="w-3 h-3" />}
+              V{v}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-5">
@@ -312,14 +279,13 @@ export default function BAccountDetail({
         </div>
       </div>
 
-      {/* Date Navigation */}
       <DateNavigation
         currentDate={currentDate}
         onDateChange={(d) => { setCurrentDate(d); setSelectedVersion(1); }}
         todayDate={todayDate}
       />
 
-      {/* Reconciliation */}
+      {/* Reconciliation — all versions summed */}
       <ReconciliationBox
         pGroupTotal={pTotal}
         nNameTotal={nTotal}
@@ -327,7 +293,7 @@ export default function BAccountDetail({
         isComplete={allGroupsSubmitted}
       />
 
-      {/* Tabs: P-Groups / N-Names / Q-Names */}
+      {/* Tabs */}
       <div className="flex gap-1 p-1 bg-surface rounded-xl border border-border">
         <button
           onClick={() => setActiveTab("pgroups")}
@@ -355,39 +321,13 @@ export default function BAccountDetail({
         </button>
       </div>
 
-      {/* P-Groups Status — with version selector */}
+      {/* P-Groups */}
       {activeTab === "pgroups" && (
         <div className="glass-card p-4 sm:p-5">
-          {/* Version pills */}
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-xs text-muted font-medium uppercase tracking-wider">Version:</span>
-            <div className="flex gap-1">
-              {[1, 2, 3].map((v) => {
-                const status = getVersionStatus(v);
-                const isFinalized = status === "FINALIZED";
-                return (
-                  <button
-                    key={v}
-                    onClick={() => setSelectedVersion(v)}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                      selectedVersion === v
-                        ? "bg-accent text-background"
-                        : isFinalized
-                          ? "bg-success/10 text-success border border-success/20"
-                          : "bg-surface text-muted border border-border hover:text-foreground"
-                    }`}
-                  >
-                    {isFinalized && selectedVersion !== v && <CheckCircle2 className="w-3 h-3" />}
-                    V{v}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
+          <VersionSelector />
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold uppercase tracking-wider" style={{ fontFamily: 'Outfit, sans-serif' }}>
-              P-Groups Status — V{selectedVersion}
+              P-Groups — V{selectedVersion}
             </h3>
             <span className="text-xs text-muted">
               {submittedGroupIds.length}/{bAccount.pGroups.length} submitted
@@ -414,9 +354,7 @@ export default function BAccountDetail({
                       </div>
                       <div className="text-left">
                         <span className="text-sm font-medium">{group.name}</span>
-                        <span className="text-xs text-muted ml-2">
-                          {group.members.length} members
-                        </span>
+                        <span className="text-xs text-muted ml-2">{group.members.length} members</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -489,29 +427,28 @@ export default function BAccountDetail({
         </div>
       )}
 
-      {/* N-Names Entry */}
+      {/* N-Names */}
       {activeTab === "nnames" && (
       <div className="glass-card p-4 sm:p-5">
+        <VersionSelector />
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold uppercase tracking-wider" style={{ fontFamily: 'Outfit, sans-serif' }}>
-            N-Names — Master Entries
+            N-Names — V{selectedVersion}
           </h3>
           <span className="text-xs text-muted">
-            {nEntries.filter((e) => e.isLocked).length}/{bAccount.nNames.length} locked
+            {versionNEntries.filter((e) => e.isLocked).length}/{bAccount.nNames.length} locked
           </span>
         </div>
         <div className="space-y-2">
           {bAccount.nNames.map((nName) => {
             const currentAmount = nAmounts[nName.id] ?? 0;
-            const savedEntry = nEntries.find((e) => e.nNameId === nName.id);
+            const savedEntry = versionNEntries.find((e) => e.nNameId === nName.id);
             const isLocked = savedEntry?.isLocked || false;
             const hasUnsavedChanges = savedEntry ? savedEntry.amount !== currentAmount : currentAmount > 0;
 
             return (
               <div key={nName.id} className={`rounded-xl transition-all ${
-                isLocked
-                  ? "bg-background border border-success/20"
-                  : "bg-background border border-border"
+                isLocked ? "bg-background border border-success/20" : "bg-background border border-border"
               }`}>
                 <div className="flex items-center gap-3 p-3 sm:p-4">
                   <div className="w-[100px] sm:w-[140px] shrink-0">
@@ -523,12 +460,7 @@ export default function BAccountDetail({
                       <input
                         type="number"
                         value={currentAmount || ""}
-                        onChange={(e) =>
-                          setNAmounts((prev) => ({
-                            ...prev,
-                            [nName.id]: parseInt(e.target.value) || 0,
-                          }))
-                        }
+                        onChange={(e) => setNAmounts((prev) => ({ ...prev, [nName.id]: parseInt(e.target.value) || 0 }))}
                         disabled={isLocked}
                         placeholder="0"
                         className={`w-full pl-8 pr-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
@@ -547,9 +479,7 @@ export default function BAccountDetail({
                       onClick={() => handleSaveNEntry(nName.id)}
                       disabled={savingN === nName.id || !hasUnsavedChanges}
                       className={`p-2.5 rounded-xl transition-all shrink-0 ${
-                        hasUnsavedChanges
-                          ? "bg-accent/10 text-accent hover:bg-accent/20"
-                          : "bg-surface text-muted/40"
+                        hasUnsavedChanges ? "bg-accent/10 text-accent hover:bg-accent/20" : "bg-surface text-muted/40"
                       }`}
                       title="Save"
                     >
@@ -568,56 +498,49 @@ export default function BAccountDetail({
                     }`}
                     title={isLocked ? "Click to unlock" : savedEntry ? "Click to lock" : "Save first"}
                   >
-                    {isLocked ? (
-                      <Lock className="w-5 h-5" />
-                    ) : (
-                      <Unlock className="w-5 h-5" />
-                    )}
+                    {isLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
             );
           })}
-
           {bAccount.nNames.length === 0 && (
             <p className="text-xs text-muted text-center py-4">No N-names configured</p>
           )}
         </div>
-
         {bAccount.nNames.length > 0 && (
           <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
-            <span className="text-sm text-muted">N-Names Total</span>
+            <span className="text-sm text-muted">N-Names Total (V{selectedVersion})</span>
             <span className="text-lg font-bold" style={{ fontFamily: 'Outfit, sans-serif' }}>
-              {formatCurrency(nTotal)}
+              {formatCurrency(Object.values(nAmounts).reduce((sum, a) => sum + (a || 0), 0))}
             </span>
           </div>
         )}
       </div>
       )}
 
-      {/* Q-Names Entry */}
+      {/* Q-Names */}
       {activeTab === "qnames" && (
       <div className="glass-card p-4 sm:p-5">
+        <VersionSelector />
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold uppercase tracking-wider" style={{ fontFamily: 'Outfit, sans-serif' }}>
-            Q-Names — Master Entries
+            Q-Names — V{selectedVersion}
           </h3>
           <span className="text-xs text-muted">
-            {qEntries.filter((e) => e.isLocked).length}/{bAccount.qNames.length} locked
+            {versionQEntries.filter((e) => e.isLocked).length}/{bAccount.qNames.length} locked
           </span>
         </div>
         <div className="space-y-2">
           {bAccount.qNames.map((qName) => {
             const currentAmount = qAmounts[qName.id] ?? 0;
-            const savedEntry = qEntries.find((e) => e.qNameId === qName.id);
+            const savedEntry = versionQEntries.find((e) => e.qNameId === qName.id);
             const isLocked = savedEntry?.isLocked || false;
             const hasUnsavedChanges = savedEntry ? savedEntry.amount !== currentAmount : currentAmount > 0;
 
             return (
               <div key={qName.id} className={`rounded-xl transition-all ${
-                isLocked
-                  ? "bg-background border border-success/20"
-                  : "bg-background border border-border"
+                isLocked ? "bg-background border border-success/20" : "bg-background border border-border"
               }`}>
                 <div className="flex items-center gap-3 p-3 sm:p-4">
                   <div className="w-[100px] sm:w-[140px] shrink-0">
@@ -629,12 +552,7 @@ export default function BAccountDetail({
                       <input
                         type="number"
                         value={currentAmount || ""}
-                        onChange={(e) =>
-                          setQAmounts((prev) => ({
-                            ...prev,
-                            [qName.id]: parseInt(e.target.value) || 0,
-                          }))
-                        }
+                        onChange={(e) => setQAmounts((prev) => ({ ...prev, [qName.id]: parseInt(e.target.value) || 0 }))}
                         disabled={isLocked}
                         placeholder="0"
                         className={`w-full pl-8 pr-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
@@ -653,9 +571,7 @@ export default function BAccountDetail({
                       onClick={() => handleSaveQEntry(qName.id)}
                       disabled={savingQ === qName.id || !hasUnsavedChanges}
                       className={`p-2.5 rounded-xl transition-all shrink-0 ${
-                        hasUnsavedChanges
-                          ? "bg-accent/10 text-accent hover:bg-accent/20"
-                          : "bg-surface text-muted/40"
+                        hasUnsavedChanges ? "bg-accent/10 text-accent hover:bg-accent/20" : "bg-surface text-muted/40"
                       }`}
                       title="Save"
                     >
@@ -674,27 +590,21 @@ export default function BAccountDetail({
                     }`}
                     title={isLocked ? "Click to unlock" : savedEntry ? "Click to lock" : "Save first"}
                   >
-                    {isLocked ? (
-                      <Lock className="w-5 h-5" />
-                    ) : (
-                      <Unlock className="w-5 h-5" />
-                    )}
+                    {isLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
             );
           })}
-
           {bAccount.qNames.length === 0 && (
             <p className="text-xs text-muted text-center py-4">No Q-names configured</p>
           )}
         </div>
-
         {bAccount.qNames.length > 0 && (
           <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
-            <span className="text-sm text-muted">Q-Names Total</span>
+            <span className="text-sm text-muted">Q-Names Total (V{selectedVersion})</span>
             <span className="text-lg font-bold" style={{ fontFamily: 'Outfit, sans-serif' }}>
-              {formatCurrency(qTotal)}
+              {formatCurrency(Object.values(qAmounts).reduce((sum, a) => sum + (a || 0), 0))}
             </span>
           </div>
         )}

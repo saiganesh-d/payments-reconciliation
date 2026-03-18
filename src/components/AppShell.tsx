@@ -54,7 +54,7 @@ export default function AppShell({ children, user }: AppShellProps) {
               </div>
               <div>
                 <h1 className="text-base font-bold tracking-tight leading-none" style={{ fontFamily: 'Outfit, sans-serif' }}>
-                  Pay<span className="text-accent">Sync</span>
+                  71<span className="text-accent">bay</span>
                 </h1>
                 <p className="text-[10px] text-muted leading-none mt-0.5">
                   {isMaster ? "Master Console" : "Account Portal"}

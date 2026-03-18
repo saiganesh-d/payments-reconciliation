@@ -28,7 +28,6 @@ export async function GET(req: NextRequest) {
 
   const bAccountIds = bAccounts.map((ba) => ba.id);
 
-  // Batch all queries — no version filter on entries (sum ALL versions)
   const [allDaySubmissions, allGroupSubmissions, allEntries, allNEntries, allQEntries] = await Promise.all([
     prisma.pc_day_submissions.findMany({
       where: { bAccountId: { in: bAccountIds }, date: targetDate },
@@ -47,7 +46,7 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  // Index by bAccountId for O(1) lookups
+  // Index by bAccountId
   const daySubMap = new Map<string, typeof allDaySubmissions>();
   for (const d of allDaySubmissions) {
     const arr = daySubMap.get(d.bAccountId) || [];
@@ -86,17 +85,38 @@ export async function GET(req: NextRequest) {
     const groupSubmissions = groupSubMap.get(ba.id) || [];
     const daySubmissions = daySubMap.get(ba.id) || [];
 
-    // P-total sums across ALL versions
+    // Overall totals (all versions summed)
     const pTotal = entries.reduce((sum, e) => sum + e.amount, 0);
     const nTotal = nEntries.reduce((sum, e) => sum + e.amount, 0);
     const qTotal = qEntries.reduce((sum, e) => sum + e.amount, 0);
 
-    // For submitted groups, count unique submitted groups across all versions
+    // Per-version breakdown
+    const versions = [1, 2, 3].map((v) => {
+      const vEntries = entries.filter((e) => e.version === v);
+      const vNEntries = nEntries.filter((e) => e.version === v);
+      const vQEntries = qEntries.filter((e) => e.version === v);
+      const vDaySub = daySubmissions.find((d) => d.version === v);
+      const vGroupSubs = groupSubmissions.filter((s) => s.version === v);
+      const vP = vEntries.reduce((sum, e) => sum + e.amount, 0);
+      const vN = vNEntries.reduce((sum, e) => sum + e.amount, 0);
+      const vQ = vQEntries.reduce((sum, e) => sum + e.amount, 0);
+      const submittedGroups = vGroupSubs.filter((s) => s.status === "SUBMITTED").length;
+
+      return {
+        version: v,
+        pTotal: vP,
+        nTotal: vN,
+        qTotal: vQ,
+        difference: (vP + vQ) - vN,
+        status: vDaySub?.status || "NOT_STARTED",
+        submittedGroups,
+      };
+    });
+
     const submittedGroups = new Set(
       groupSubmissions.filter((s) => s.status === "SUBMITTED").map((s) => s.pGroupId)
     ).size;
 
-    // Status: use highest version's status, or check if any version is finalized
     const latestDaySub = daySubmissions.sort((a, b) => b.version - a.version)[0];
 
     return {
@@ -111,6 +131,7 @@ export async function GET(req: NextRequest) {
       difference: (pTotal + qTotal) - nTotal,
       nNameCount: ba.nNames.length,
       qNameCount: ba.qNames.length,
+      versions,
     };
   });
 

@@ -33,7 +33,6 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  // Aggregate per day
   const dayMap = new Map<string, { pTotal: number; nTotal: number; qTotal: number }>();
 
   for (const e of pEntries) {

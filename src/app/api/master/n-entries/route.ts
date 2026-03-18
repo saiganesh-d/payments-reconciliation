@@ -8,11 +8,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { date, bAccountId, nNameId, amount } = await req.json();
+  const { date, bAccountId, nNameId, amount, version = 1 } = await req.json();
 
-  // Check if editing a past entry (for audit log)
   const existing = await prisma.pc_daily_n_entries.findFirst({
-    where: { date: new Date(date), nNameId },
+    where: { date: new Date(date), nNameId, version },
   });
 
   if (existing && existing.amount !== amount) {
@@ -29,11 +28,12 @@ export async function POST(req: NextRequest) {
   }
 
   const entry = await prisma.pc_daily_n_entries.upsert({
-    where: { date_nNameId: { date: new Date(date), nNameId } },
+    where: { date_nNameId_version: { date: new Date(date), nNameId, version } },
     create: {
       date: new Date(date),
       bAccountId,
       nNameId,
+      version,
       amount,
     },
     update: { amount },

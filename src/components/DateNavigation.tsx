@@ -13,9 +13,10 @@ export default function DateNavigation({ currentDate, onDateChange, todayDate }:
   const isToday = currentDate === todayDate;
 
   function shiftDate(days: number) {
-    const d = new Date(currentDate + "T00:00:00");
-    d.setDate(d.getDate() + days);
-    const newDate = d.toISOString().split("T")[0];
+    // Parse YYYY-MM-DD manually to avoid timezone issues
+    const [y, m, d] = currentDate.split("-").map(Number);
+    const date = new Date(y, m - 1, d + days);
+    const newDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     // Don't go beyond today
     if (newDate > todayDate) return;
     onDateChange(newDate);

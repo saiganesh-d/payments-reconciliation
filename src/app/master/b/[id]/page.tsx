@@ -5,7 +5,7 @@ import BAccountDetail from "@/components/BAccountDetail";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; version?: string }>;
 }
 
 export default async function BAccountDetailPage({ params, searchParams }: PageProps) {
@@ -14,11 +14,15 @@ export default async function BAccountDetailPage({ params, searchParams }: PageP
   if (session.role !== "MASTER") redirect("/dashboard");
 
   const { id } = await params;
-  const { date } = await searchParams;
+  const { date, version } = await searchParams;
 
   return (
     <AppShell user={session}>
-      <BAccountDetail bAccountId={id} initialDate={date} />
+      <BAccountDetail
+        bAccountId={id}
+        initialDate={date}
+        initialVersion={version ? parseInt(version) : undefined}
+      />
     </AppShell>
   );
 }

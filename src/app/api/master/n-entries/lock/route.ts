@@ -8,10 +8,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { date, nNameId, action } = await req.json();
+  const { date, nNameId, action, version = 1 } = await req.json();
 
   const entry = await prisma.pc_daily_n_entries.findFirst({
-    where: { date: new Date(date), nNameId },
+    where: { date: new Date(date), nNameId, version },
   });
 
   if (!entry) {
