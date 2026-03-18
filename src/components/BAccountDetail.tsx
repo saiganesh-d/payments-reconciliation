@@ -3,10 +3,9 @@
 import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, CheckCircle2, Clock, AlertTriangle, Lock, Unlock, Save, Info, ChevronDown } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, AlertTriangle, Lock, Unlock, Info, ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import DateNavigation from "./DateNavigation";
-import ReconciliationBox from "./ReconciliationBox";
 import { getISTDate, formatCurrency } from "@/lib/utils";
 import { fetcher } from "@/lib/fetcher";
 
@@ -91,10 +90,9 @@ export default function BAccountDetail({
   const [currentDate, setCurrentDate] = useState(initialDate || todayDate);
   const [nAmounts, setNAmounts] = useState<Record<string, number>>({});
   const [qAmounts, setQAmounts] = useState<Record<string, number>>({});
-  const [savingN, setSavingN] = useState<string | null>(null);
-  const [savingQ, setSavingQ] = useState<string | null>(null);
+  const [lockingN, setLockingN] = useState<string | null>(null);
+  const [lockingQ, setLockingQ] = useState<string | null>(null);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"pgroups" | "nnames" | "qnames">("pgroups");
   const [selectedVersion, setSelectedVersion] = useState(initialVersion || 1);
   const router = useRouter();
 
@@ -133,58 +131,74 @@ export default function BAccountDetail({
     }
   }, [data?.qEntries, selectedVersion]);
 
-  const handleSaveNEntry = async (nNameId: string) => {
-    setSavingN(nNameId);
-    try {
-      await fetch("/api/master/n-entries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: currentDate, bAccountId, nNameId,
-          amount: nAmounts[nNameId] || 0,
-          version: selectedVersion,
-        }),
-      });
-      mutateDetail();
-    } finally {
-      setSavingN(null);
-    }
-  };
-
+  // Lock N-entry: saves first, then locks
   const handleNLock = async (nNameId: string, action: "lock" | "unlock") => {
-    const res = await fetch("/api/master/n-entries/lock", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: currentDate, nNameId, action, version: selectedVersion }),
-    });
-    if (res.ok) mutateDetail();
-  };
-
-  const handleSaveQEntry = async (qNameId: string) => {
-    setSavingQ(qNameId);
-    try {
-      await fetch("/api/master/q-entries", {
+    if (action === "lock") {
+      setLockingN(nNameId);
+      try {
+        // Save first
+        await fetch("/api/master/n-entries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: currentDate, bAccountId, nNameId,
+            amount: nAmounts[nNameId] || 0,
+            version: selectedVersion,
+          }),
+        });
+        // Then lock
+        await fetch("/api/master/n-entries/lock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: currentDate, nNameId, action: "lock", version: selectedVersion }),
+        });
+        mutateDetail();
+      } finally {
+        setLockingN(null);
+      }
+    } else {
+      const res = await fetch("/api/master/n-entries/lock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: currentDate, bAccountId, qNameId,
-          amount: qAmounts[qNameId] || 0,
-          version: selectedVersion,
-        }),
+        body: JSON.stringify({ date: currentDate, nNameId, action: "unlock", version: selectedVersion }),
       });
-      mutateDetail();
-    } finally {
-      setSavingQ(null);
+      if (res.ok) mutateDetail();
     }
   };
 
+  // Lock Q-entry: saves first, then locks
   const handleQLock = async (qNameId: string, action: "lock" | "unlock") => {
-    const res = await fetch("/api/master/q-entries/lock", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: currentDate, qNameId, action, version: selectedVersion }),
-    });
-    if (res.ok) mutateDetail();
+    if (action === "lock") {
+      setLockingQ(qNameId);
+      try {
+        // Save first
+        await fetch("/api/master/q-entries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: currentDate, bAccountId, qNameId,
+            amount: qAmounts[qNameId] || 0,
+            version: selectedVersion,
+          }),
+        });
+        // Then lock
+        await fetch("/api/master/q-entries/lock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: currentDate, qNameId, action: "lock", version: selectedVersion }),
+        });
+        mutateDetail();
+      } finally {
+        setLockingQ(null);
+      }
+    } else {
+      const res = await fetch("/api/master/q-entries/lock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: currentDate, qNameId, action: "unlock", version: selectedVersion }),
+      });
+      if (res.ok) mutateDetail();
+    }
   };
 
   const handleUnlock = async (entryId: string) => {
@@ -211,12 +225,7 @@ export default function BAccountDetail({
     return <div className="text-center text-muted py-12">Account not found</div>;
   }
 
-  // Totals: ALL versions summed for reconciliation
-  const pTotal = entries.reduce((sum, e) => sum + e.amount, 0);
-  const nTotal = nEntries.reduce((sum, e) => sum + e.amount, 0);
-  const qTotal = qEntries.reduce((sum, e) => sum + e.amount, 0);
-
-  // Filtered by selected version for display
+  // Filtered by selected version
   const versionEntries = entries.filter((e) => e.version === selectedVersion);
   const versionNEntries = nEntries.filter((e) => e.version === selectedVersion);
   const versionQEntries = qEntries.filter((e) => e.version === selectedVersion);
@@ -225,41 +234,19 @@ export default function BAccountDetail({
   const submittedGroupIds = versionGroupSubs
     .filter((s) => s.status === "SUBMITTED")
     .map((s) => s.pGroupId);
-  const allGroupsSubmitted = bAccount.pGroups.length > 0 && submittedGroupIds.length === bAccount.pGroups.length;
+
+  // Per-version totals for difference
+  const vPTotal = versionEntries.reduce((sum, e) => sum + e.amount, 0);
+  const vNTotal = versionNEntries.reduce((sum, e) => sum + e.amount, 0);
+  const vQTotal = versionQEntries.reduce((sum, e) => sum + e.amount, 0);
+  const vDifference = (vPTotal + vQTotal) - vNTotal;
+  const vIsMatch = vDifference === 0 && (vPTotal > 0 || vQTotal > 0);
+  const vHasDiff = vDifference !== 0 && (vPTotal > 0 || vNTotal > 0 || vQTotal > 0);
 
   const getVersionStatus = (v: number) => {
     const ds = daySubmissions.find((d) => d.version === v);
     return ds?.status || "NOT_STARTED";
   };
-
-  // Version selector shared component
-  const VersionSelector = () => (
-    <div className="flex items-center gap-2 mb-4">
-      <span className="text-xs text-muted font-medium uppercase tracking-wider">Version:</span>
-      <div className="flex gap-1">
-        {[1, 2, 3].map((v) => {
-          const status = getVersionStatus(v);
-          const isFinalized = status === "FINALIZED";
-          return (
-            <button
-              key={v}
-              onClick={() => setSelectedVersion(v)}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                selectedVersion === v
-                  ? "bg-accent text-background"
-                  : isFinalized
-                    ? "bg-success/10 text-success border border-success/20"
-                    : "bg-surface text-muted border border-border hover:text-foreground"
-              }`}
-            >
-              {isFinalized && selectedVersion !== v && <CheckCircle2 className="w-3 h-3" />}
-              V{v}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
 
   return (
     <div className="space-y-5">
@@ -285,152 +272,69 @@ export default function BAccountDetail({
         todayDate={todayDate}
       />
 
-      {/* Reconciliation — all versions summed */}
-      <ReconciliationBox
-        pGroupTotal={pTotal}
-        nNameTotal={nTotal}
-        qNameTotal={qTotal}
-        isComplete={allGroupsSubmitted}
-      />
-
-      {/* Tabs */}
+      {/* Version Tabs — top level */}
       <div className="flex gap-1 p-1 bg-surface rounded-xl border border-border">
-        <button
-          onClick={() => setActiveTab("pgroups")}
-          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
-            activeTab === "pgroups" ? "bg-accent text-background" : "text-muted hover:text-foreground"
-          }`}
-        >
-          P-Groups ({bAccount.pGroups.length})
-        </button>
-        <button
-          onClick={() => setActiveTab("nnames")}
-          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
-            activeTab === "nnames" ? "bg-accent text-background" : "text-muted hover:text-foreground"
-          }`}
-        >
-          N-Names ({bAccount.nNames.length})
-        </button>
-        <button
-          onClick={() => setActiveTab("qnames")}
-          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
-            activeTab === "qnames" ? "bg-accent text-background" : "text-muted hover:text-foreground"
-          }`}
-        >
-          Q-Names ({bAccount.qNames.length})
-        </button>
+        {[1, 2, 3].map((v) => {
+          const status = getVersionStatus(v);
+          const isFinalized = status === "FINALIZED";
+          return (
+            <button
+              key={v}
+              onClick={() => setSelectedVersion(v)}
+              className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                selectedVersion === v
+                  ? "bg-accent text-background"
+                  : isFinalized
+                    ? "bg-success/10 text-success border border-success/20"
+                    : "bg-surface text-muted border border-border hover:text-foreground"
+              }`}
+            >
+              {isFinalized && selectedVersion !== v && <CheckCircle2 className="w-3.5 h-3.5" />}
+              V{v}
+            </button>
+          );
+        })}
       </div>
 
-      {/* P-Groups */}
-      {activeTab === "pgroups" && (
-        <div className="glass-card p-4 sm:p-5">
-          <VersionSelector />
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold uppercase tracking-wider" style={{ fontFamily: 'Outfit, sans-serif' }}>
-              P-Groups — V{selectedVersion}
-            </h3>
-            <span className="text-xs text-muted">
-              {submittedGroupIds.length}/{bAccount.pGroups.length} submitted
-            </span>
+      {/* Difference Box — for selected version */}
+      <div className={`glass-card p-5 sm:p-6 border-2 transition-all ${
+        vIsMatch ? "border-success/30" : vHasDiff ? "border-danger/30" : "border-border"
+      }`}>
+        <div className="grid grid-cols-4 gap-3">
+          <div>
+            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">P-Total</p>
+            <p className="text-lg font-bold mt-0.5" style={{ fontFamily: 'Outfit, sans-serif' }}>
+              {formatCurrency(vPTotal)}
+            </p>
           </div>
-          <div className="space-y-2">
-            {bAccount.pGroups.map((group) => {
-              const isSubmitted = submittedGroupIds.includes(group.id);
-              const groupEntries = versionEntries.filter((e) => e.pGroupId === group.id);
-              const groupTotal = groupEntries.reduce((sum, e) => sum + e.amount, 0);
-              const isExpanded = expandedGroupId === group.id;
-
-              return (
-                <div key={group.id} className="bg-background rounded-xl overflow-hidden">
-                  <button
-                    onClick={() => setExpandedGroupId(isExpanded ? null : group.id)}
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-hover/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
-                        isSubmitted ? "bg-success/10 text-success" : "bg-muted/10 text-muted"
-                      }`}>
-                        {group.name}
-                      </div>
-                      <div className="text-left">
-                        <span className="text-sm font-medium">{group.name}</span>
-                        <span className="text-xs text-muted ml-2">{group.members.length} members</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-semibold">{formatCurrency(groupTotal)}</span>
-                      {isSubmitted ? (
-                        <CheckCircle2 className="w-4 h-4 text-success" />
-                      ) : groupEntries.length > 0 ? (
-                        <Clock className="w-4 h-4 text-warning" />
-                      ) : (
-                        <AlertTriangle className="w-4 h-4 text-muted" />
-                      )}
-                      <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                        <ChevronDown className="w-4 h-4 text-muted" />
-                      </motion.div>
-                    </div>
-                  </button>
-
-                  <AnimatePresence>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="border-t border-border/50 px-4 py-2 space-y-1">
-                          {group.members.map((member) => {
-                            const entry = groupEntries.find((e) => e.memberId === member.id);
-                            return (
-                              <div key={member.id} className="flex items-center justify-between py-1.5 text-xs">
-                                <span className="flex items-center gap-1">
-                                  {member.name}
-                                  {member.note && (
-                                    <span className="relative group/tip inline-flex cursor-help">
-                                      <Info className="w-3 h-3 text-muted/50 hover:text-accent transition-colors" />
-                                      <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 hidden group-hover/tip:block z-50 px-2.5 py-1.5 rounded-lg bg-surface border border-border shadow-xl text-[10px] text-foreground whitespace-nowrap">
-                                        {member.note}
-                                      </span>
-                                    </span>
-                                  )}
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  <span className={`font-medium ${entry?.amount ? "text-foreground" : "text-muted"}`}>
-                                    {entry?.amount ? formatCurrency(entry.amount) : "—"}
-                                  </span>
-                                  {entry?.isLocked ? (
-                                    <button
-                                      onClick={() => handleUnlock(entry.id)}
-                                      className="p-1 rounded text-success hover:text-warning hover:bg-warning/10 transition-colors"
-                                      title="Click to unlock"
-                                    >
-                                      <Lock className="w-3 h-3" />
-                                    </button>
-                                  ) : entry ? (
-                                    <Unlock className="w-3 h-3 text-muted" />
-                                  ) : null}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
+          <div>
+            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">Q-Total</p>
+            <p className="text-lg font-bold mt-0.5" style={{ fontFamily: 'Outfit, sans-serif' }}>
+              {formatCurrency(vQTotal)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">N-Total</p>
+            <p className="text-lg font-bold mt-0.5" style={{ fontFamily: 'Outfit, sans-serif' }}>
+              {formatCurrency(vNTotal)}
+            </p>
+          </div>
+          <div className={`rounded-xl p-2 -m-2 ${
+            vIsMatch ? "bg-success/10" : vHasDiff ? "bg-danger/10" : ""
+          }`}>
+            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">Difference</p>
+            <p className={`text-lg font-bold mt-0.5 ${
+              vIsMatch ? "text-success" : vHasDiff ? "text-danger" : "text-muted"
+            }`} style={{ fontFamily: 'Outfit, sans-serif' }}>
+              {vDifference === 0 ? "0" : formatCurrency(Math.abs(vDifference))}
+            </p>
+            <p className="text-[10px] text-muted">(P + Q) - N</p>
           </div>
         </div>
-      )}
+      </div>
 
       {/* N-Names */}
-      {activeTab === "nnames" && (
       <div className="glass-card p-4 sm:p-5">
-        <VersionSelector />
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold uppercase tracking-wider" style={{ fontFamily: 'Outfit, sans-serif' }}>
             N-Names — V{selectedVersion}
@@ -444,7 +348,6 @@ export default function BAccountDetail({
             const currentAmount = nAmounts[nName.id] ?? 0;
             const savedEntry = versionNEntries.find((e) => e.nNameId === nName.id);
             const isLocked = savedEntry?.isLocked || false;
-            const hasUnsavedChanges = savedEntry ? savedEntry.amount !== currentAmount : currentAmount > 0;
 
             return (
               <div key={nName.id} className={`rounded-xl transition-all ${
@@ -456,14 +359,19 @@ export default function BAccountDetail({
                   </div>
                   <div className="flex-1 flex items-center justify-center">
                     <div className="relative w-full max-w-[200px]">
-                      <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm ${isLocked ? "text-success/60" : "text-muted"}`}>₹</span>
                       <input
                         type="number"
                         value={currentAmount || ""}
                         onChange={(e) => setNAmounts((prev) => ({ ...prev, [nName.id]: parseInt(e.target.value) || 0 }))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && currentAmount && !isLocked) {
+                            e.preventDefault();
+                            handleNLock(nName.id, "lock");
+                          }
+                        }}
                         disabled={isLocked}
                         placeholder="0"
-                        className={`w-full pl-8 pr-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
+                        className={`w-full px-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
                           isLocked
                             ? "bg-success/5 text-success border border-success/20 cursor-not-allowed"
                             : currentAmount
@@ -474,29 +382,17 @@ export default function BAccountDetail({
                       />
                     </div>
                   </div>
-                  {!isLocked && (
-                    <button
-                      onClick={() => handleSaveNEntry(nName.id)}
-                      disabled={savingN === nName.id || !hasUnsavedChanges}
-                      className={`p-2.5 rounded-xl transition-all shrink-0 ${
-                        hasUnsavedChanges ? "bg-accent/10 text-accent hover:bg-accent/20" : "bg-surface text-muted/40"
-                      }`}
-                      title="Save"
-                    >
-                      <Save className="w-5 h-5" />
-                    </button>
-                  )}
                   <button
                     onClick={() => isLocked ? handleNLock(nName.id, "unlock") : handleNLock(nName.id, "lock")}
-                    disabled={!isLocked && (!savedEntry || hasUnsavedChanges)}
+                    disabled={!isLocked && !currentAmount || lockingN === nName.id}
                     className={`p-3 rounded-xl transition-all shrink-0 ${
                       isLocked
                         ? "bg-success/10 text-success hover:bg-warning/10 hover:text-warning"
-                        : savedEntry && !hasUnsavedChanges
+                        : currentAmount
                           ? "bg-accent/10 text-accent hover:bg-accent/20"
                           : "bg-surface text-muted/30 cursor-not-allowed"
                     }`}
-                    title={isLocked ? "Click to unlock" : savedEntry ? "Click to lock" : "Save first"}
+                    title={isLocked ? "Click to unlock" : currentAmount ? "Press Enter or click to lock" : "Enter amount first"}
                   >
                     {isLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
                   </button>
@@ -517,12 +413,9 @@ export default function BAccountDetail({
           </div>
         )}
       </div>
-      )}
 
       {/* Q-Names */}
-      {activeTab === "qnames" && (
       <div className="glass-card p-4 sm:p-5">
-        <VersionSelector />
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold uppercase tracking-wider" style={{ fontFamily: 'Outfit, sans-serif' }}>
             Q-Names — V{selectedVersion}
@@ -536,7 +429,6 @@ export default function BAccountDetail({
             const currentAmount = qAmounts[qName.id] ?? 0;
             const savedEntry = versionQEntries.find((e) => e.qNameId === qName.id);
             const isLocked = savedEntry?.isLocked || false;
-            const hasUnsavedChanges = savedEntry ? savedEntry.amount !== currentAmount : currentAmount > 0;
 
             return (
               <div key={qName.id} className={`rounded-xl transition-all ${
@@ -548,14 +440,19 @@ export default function BAccountDetail({
                   </div>
                   <div className="flex-1 flex items-center justify-center">
                     <div className="relative w-full max-w-[200px]">
-                      <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm ${isLocked ? "text-success/60" : "text-muted"}`}>₹</span>
                       <input
                         type="number"
                         value={currentAmount || ""}
                         onChange={(e) => setQAmounts((prev) => ({ ...prev, [qName.id]: parseInt(e.target.value) || 0 }))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && currentAmount && !isLocked) {
+                            e.preventDefault();
+                            handleQLock(qName.id, "lock");
+                          }
+                        }}
                         disabled={isLocked}
                         placeholder="0"
-                        className={`w-full pl-8 pr-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
+                        className={`w-full px-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
                           isLocked
                             ? "bg-success/5 text-success border border-success/20 cursor-not-allowed"
                             : currentAmount
@@ -566,29 +463,17 @@ export default function BAccountDetail({
                       />
                     </div>
                   </div>
-                  {!isLocked && (
-                    <button
-                      onClick={() => handleSaveQEntry(qName.id)}
-                      disabled={savingQ === qName.id || !hasUnsavedChanges}
-                      className={`p-2.5 rounded-xl transition-all shrink-0 ${
-                        hasUnsavedChanges ? "bg-accent/10 text-accent hover:bg-accent/20" : "bg-surface text-muted/40"
-                      }`}
-                      title="Save"
-                    >
-                      <Save className="w-5 h-5" />
-                    </button>
-                  )}
                   <button
                     onClick={() => isLocked ? handleQLock(qName.id, "unlock") : handleQLock(qName.id, "lock")}
-                    disabled={!isLocked && (!savedEntry || hasUnsavedChanges)}
+                    disabled={!isLocked && !currentAmount || lockingQ === qName.id}
                     className={`p-3 rounded-xl transition-all shrink-0 ${
                       isLocked
                         ? "bg-success/10 text-success hover:bg-warning/10 hover:text-warning"
-                        : savedEntry && !hasUnsavedChanges
+                        : currentAmount
                           ? "bg-accent/10 text-accent hover:bg-accent/20"
                           : "bg-surface text-muted/30 cursor-not-allowed"
                     }`}
-                    title={isLocked ? "Click to unlock" : savedEntry ? "Click to lock" : "Save first"}
+                    title={isLocked ? "Click to unlock" : currentAmount ? "Press Enter or click to lock" : "Enter amount first"}
                   >
                     {isLocked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
                   </button>
@@ -609,7 +494,109 @@ export default function BAccountDetail({
           </div>
         )}
       </div>
-      )}
+
+      {/* P-Groups — collapsible read-only */}
+      <div className="glass-card p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold uppercase tracking-wider" style={{ fontFamily: 'Outfit, sans-serif' }}>
+            P-Groups — V{selectedVersion}
+          </h3>
+          <span className="text-xs text-muted">
+            {submittedGroupIds.length}/{bAccount.pGroups.length} submitted
+          </span>
+        </div>
+        <div className="space-y-2">
+          {bAccount.pGroups.map((group) => {
+            const isSubmitted = submittedGroupIds.includes(group.id);
+            const groupEntries = versionEntries.filter((e) => e.pGroupId === group.id);
+            const groupTotal = groupEntries.reduce((sum, e) => sum + e.amount, 0);
+            const isExpanded = expandedGroupId === group.id;
+
+            return (
+              <div key={group.id} className="bg-background rounded-xl overflow-hidden">
+                <button
+                  onClick={() => setExpandedGroupId(isExpanded ? null : group.id)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-hover/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                      isSubmitted ? "bg-success/10 text-success" : "bg-muted/10 text-muted"
+                    }`}>
+                      {group.name}
+                    </div>
+                    <div className="text-left">
+                      <span className="text-sm font-medium">{group.name}</span>
+                      <span className="text-xs text-muted ml-2">{group.members.length} members</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold">{formatCurrency(groupTotal)}</span>
+                    {isSubmitted ? (
+                      <CheckCircle2 className="w-4 h-4 text-success" />
+                    ) : groupEntries.length > 0 ? (
+                      <Clock className="w-4 h-4 text-warning" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-muted" />
+                    )}
+                    <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                      <ChevronDown className="w-4 h-4 text-muted" />
+                    </motion.div>
+                  </div>
+                </button>
+
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="border-t border-border/50 px-4 py-2 space-y-1">
+                        {group.members.map((member) => {
+                          const entry = groupEntries.find((e) => e.memberId === member.id);
+                          return (
+                            <div key={member.id} className="flex items-center justify-between py-1.5 text-xs">
+                              <span className="flex items-center gap-1">
+                                {member.name}
+                                {member.note && (
+                                  <span className="relative group/tip inline-flex cursor-help">
+                                    <Info className="w-3 h-3 text-muted/50 hover:text-accent transition-colors" />
+                                    <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 hidden group-hover/tip:block z-50 px-2.5 py-1.5 rounded-lg bg-surface border border-border shadow-xl text-[10px] text-foreground whitespace-nowrap">
+                                      {member.note}
+                                    </span>
+                                  </span>
+                                )}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className={`font-medium ${entry?.amount ? "text-foreground" : "text-muted"}`}>
+                                  {entry?.amount ? formatCurrency(entry.amount) : "—"}
+                                </span>
+                                {entry?.isLocked ? (
+                                  <button
+                                    onClick={() => handleUnlock(entry.id)}
+                                    className="p-1 rounded text-success hover:text-warning hover:bg-warning/10 transition-colors"
+                                    title="Click to unlock"
+                                  >
+                                    <Lock className="w-3 h-3" />
+                                  </button>
+                                ) : entry ? (
+                                  <Unlock className="w-3 h-3 text-muted" />
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Check, Lock, Unlock, Users, IndianRupee, Info } from "lucide-react";
+import { ChevronDown, Check, Lock, Unlock, Users, Info } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
 interface Member {
@@ -118,8 +118,7 @@ export default function GroupAccordion({
                 <Users className="w-3 h-3" />
                 {lockedCount}/{totalMembers} locked
               </span>
-              <span className="text-xs text-muted flex items-center gap-1">
-                <IndianRupee className="w-3 h-3" />
+              <span className="text-xs text-muted">
                 {formatCurrency(totalAmount)}
               </span>
             </div>
@@ -150,7 +149,7 @@ export default function GroupAccordion({
                 const entry = getEntry(member.id);
                 const isLocked = entry?.isLocked || false;
                 const amount = entry?.amount || 0;
-                const isReadOnly = (isLocked || isSubmitted || isDayFinalized);
+                const isReadOnly = isLocked || isDayFinalized;
 
                 return (
                   <div
@@ -170,17 +169,22 @@ export default function GroupAccordion({
                         {member.note && <NoteTooltip note={member.note} />}
                       </div>
 
-                      {/* Amount Input — prominent */}
+                      {/* Amount Input */}
                       <div className="flex-1 flex items-center justify-center">
-                        <div className={`relative w-full max-w-[200px] ${isLocked ? "" : ""}`}>
-                          <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm ${isLocked ? "text-success/60" : "text-muted"}`}>₹</span>
+                        <div className="relative w-full max-w-[200px]">
                           <input
                             type="number"
                             value={amount || ""}
                             onChange={(e) => onAmountChange(member.id, parseInt(e.target.value) || 0)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && amount && !isLocked && !isDayFinalized) {
+                                e.preventDefault();
+                                onLockEntry(member.id);
+                              }
+                            }}
                             disabled={isReadOnly}
                             placeholder="0"
-                            className={`w-full pl-8 pr-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
+                            className={`w-full px-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
                               isLocked
                                 ? "bg-success/5 text-success border border-success/20 cursor-not-allowed"
                                 : amount
@@ -192,8 +196,8 @@ export default function GroupAccordion({
                         </div>
                       </div>
 
-                      {/* Lock / Unlock Toggle */}
-                      {!isSubmitted && !isDayFinalized && (
+                      {/* Lock / Unlock Toggle — always available unless day finalized */}
+                      {!isDayFinalized && (
                         <button
                           onClick={() => isLocked ? onUnlockEntry(member.id) : onLockEntry(member.id)}
                           disabled={!isLocked && !amount}
@@ -204,7 +208,7 @@ export default function GroupAccordion({
                                 ? "bg-accent/10 text-accent hover:bg-accent/20"
                                 : "bg-surface text-muted/30 cursor-not-allowed"
                           }`}
-                          title={isLocked ? "Click to unlock" : amount ? "Click to lock" : "Enter amount first"}
+                          title={isLocked ? "Click to unlock & edit" : amount ? "Press Enter or click to lock" : "Enter amount first"}
                         >
                           {isLocked ? (
                             <Lock className="w-5 h-5" />
@@ -214,8 +218,8 @@ export default function GroupAccordion({
                         </button>
                       )}
 
-                      {/* Submitted check */}
-                      {(isSubmitted || isDayFinalized) && (
+                      {/* Day finalized check */}
+                      {isDayFinalized && (
                         <div className="p-3 text-success shrink-0">
                           <Check className="w-5 h-5" />
                         </div>

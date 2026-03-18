@@ -7,7 +7,6 @@ import { Send, Loader2, CheckCircle2, Lock } from "lucide-react";
 import DateNavigation from "./DateNavigation";
 import SummaryCard from "./SummaryCard";
 import GroupAccordion from "./GroupAccordion";
-import MissedDayBanner from "./MissedDayBanner";
 import { getISTDate } from "@/lib/utils";
 import { fetcher } from "@/lib/fetcher";
 
@@ -65,18 +64,11 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
     dedupingInterval: 5000,
   });
 
-  const { data: missedData } = useSWR<{ date: string }[]>(
-    "/api/master/missed-days",
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 60000 }
-  );
 
   const groups = data?.groups || [];
   const entries = data?.entries || [];
   const groupSubmissions = data?.groupSubmissions || [];
   const daySubmission = data?.daySubmission || null;
-  const missedDates = missedData?.map((d) => d.date) || [];
-
   const handleAmountChange = async (memberId: string, amount: number, pGroupId: string) => {
     mutateEntries(
       (prev) => {
@@ -259,12 +251,6 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
           );
         })}
       </div>
-
-      {/* Missed Days Banner */}
-      <MissedDayBanner
-        missedDates={missedDates}
-        onNavigate={(d) => { setCurrentDate(d); setCurrentVersion(1); }}
-      />
 
       {/* Summary Card */}
       <SummaryCard

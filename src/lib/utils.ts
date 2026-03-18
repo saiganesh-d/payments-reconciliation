@@ -22,8 +22,6 @@ export function formatDate(dateStr: string): string {
 
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
     maximumFractionDigits: 0,
   }).format(amount);
 }

@@ -6,8 +6,8 @@ import { motion } from "framer-motion";
 import { Building2, CheckCircle2, Clock, AlertTriangle, ArrowRight, ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import DateNavigation from "./DateNavigation";
-import MissedDayBanner from "./MissedDayBanner";
 import DifferenceChart from "./DifferenceChart";
+import UserFluctuationAnalysis from "./UserFluctuationAnalysis";
 import { getISTDate, formatCurrency } from "@/lib/utils";
 import { fetcher } from "@/lib/fetcher";
 
@@ -40,6 +40,7 @@ export default function MasterDashboard() {
   const todayDate = getISTDate();
   const [currentDate, setCurrentDate] = useState(todayDate);
   const [showChart, setShowChart] = useState(false);
+  const [showFluctuation, setShowFluctuation] = useState(false);
   const [expandedBA, setExpandedBA] = useState<string | null>(null);
   const router = useRouter();
 
@@ -49,17 +50,10 @@ export default function MasterDashboard() {
     { revalidateOnFocus: true, dedupingInterval: 5000 }
   );
 
-  const { data: missedDays = [] } = useSWR<{ bAccountId: string; bAccountName: string; date: string }[]>(
-    "/api/master/missed-days",
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 60000 }
-  );
-
   const totalPAmount = bAccounts.reduce((sum, ba) => sum + ba.pTotal, 0);
   const totalNAmount = bAccounts.reduce((sum, ba) => sum + ba.nTotal, 0);
   const totalQAmount = bAccounts.reduce((sum, ba) => sum + ba.qTotal, 0);
   const totalDifference = (totalPAmount + totalQAmount) - totalNAmount;
-  const uniqueMissedDates = [...new Set(missedDays.map((d) => d.date))];
 
   if (isLoading) {
     return (
@@ -78,13 +72,6 @@ export default function MasterDashboard() {
         onDateChange={setCurrentDate}
         todayDate={todayDate}
       />
-
-      {currentDate === todayDate && (
-        <MissedDayBanner
-          missedDates={uniqueMissedDates}
-          onNavigate={setCurrentDate}
-        />
-      )}
 
       {/* Overall Summary */}
       <div className="glass-card p-5 sm:p-6">
@@ -112,7 +99,7 @@ export default function MasterDashboard() {
             <p className={`text-xl sm:text-2xl font-bold mt-1 ${
               totalDifference === 0 ? "text-success" : "text-danger"
             }`} style={{ fontFamily: 'Outfit, sans-serif' }}>
-              {totalDifference === 0 ? "₹0" : formatCurrency(Math.abs(totalDifference))}
+              {totalDifference === 0 ? "0" : formatCurrency(Math.abs(totalDifference))}
             </p>
             <p className="text-[10px] text-muted">(P + Q) - N</p>
           </div>
@@ -135,6 +122,26 @@ export default function MasterDashboard() {
         {showChart && (
           <div className="px-4 pb-4">
             <DifferenceChart />
+          </div>
+        )}
+      </div>
+
+      {/* User Fluctuation Analysis — collapsible */}
+      <div className="glass-card overflow-hidden">
+        <button
+          onClick={() => setShowFluctuation(!showFluctuation)}
+          className="w-full flex items-center justify-between p-4 hover:bg-surface-hover/50 transition-colors"
+        >
+          <span className="text-sm font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>
+            User Fluctuation Analysis
+          </span>
+          <motion.div animate={{ rotate: showFluctuation ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown className="w-4 h-4 text-muted" />
+          </motion.div>
+        </button>
+        {showFluctuation && (
+          <div className="px-4 pb-4">
+            <UserFluctuationAnalysis />
           </div>
         )}
       </div>
@@ -217,7 +224,7 @@ export default function MasterDashboard() {
                     <p className={`text-sm font-bold mt-0.5 ${
                       isMatch ? "text-success" : !hasDifference ? "text-muted" : "text-danger"
                     }`}>
-                      {ba.difference === 0 ? "₹0" : formatCurrency(Math.abs(ba.difference))}
+                      {ba.difference === 0 ? "0" : formatCurrency(Math.abs(ba.difference))}
                     </p>
                   </div>
                 </div>
@@ -271,7 +278,7 @@ export default function MasterDashboard() {
                             <span className="font-semibold">{formatCurrency(v.nTotal)}</span>
                           </div>
                           <div className={vMatch ? "text-success" : vHasDiff ? "text-danger" : "text-muted"}>
-                            <span className="font-bold">{v.difference === 0 ? "₹0" : formatCurrency(Math.abs(v.difference))}</span>
+                            <span className="font-bold">{v.difference === 0 ? "0" : formatCurrency(Math.abs(v.difference))}</span>
                           </div>
                         </div>
                         <StatusIcon className={`w-3.5 h-3.5 ${statusColor} shrink-0`} />

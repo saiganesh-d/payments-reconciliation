@@ -135,7 +135,7 @@ export default function DifferenceChart() {
               <p className={`font-bold text-sm ${
                 selectedPoint.difference === 0 ? "text-success" : "text-danger"
               }`}>
-                {selectedPoint.difference === 0 ? "₹0" : formatCurrency(Math.abs(selectedPoint.difference))}
+                {selectedPoint.difference === 0 ? "0" : formatCurrency(Math.abs(selectedPoint.difference))}
                 {selectedPoint.difference !== 0 && (
                   <span className="text-[10px] font-normal ml-1">
                     {selectedPoint.difference > 0 ? "excess" : "deficit"}
@@ -168,7 +168,7 @@ export default function DifferenceChart() {
               <YAxis
                 tick={{ fontSize: 10, fill: "var(--color-muted, #888)" }}
                 axisLine={{ stroke: "var(--color-border, #333)" }}
-                tickFormatter={(v) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}k` : `₹${v}`}
+                tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`}
               />
               <Tooltip
                 contentStyle={{

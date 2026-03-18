@@ -86,7 +86,7 @@ export default function ReconciliationBox({ pGroupTotal, nNameTotal, qNameTotal 
                 ? "text-success"
                 : "text-danger"
           }`} style={{ fontFamily: 'Outfit, sans-serif' }}>
-            {isMatch ? "₹0" : formatCurrency(Math.abs(difference))}
+            {isMatch ? "0" : formatCurrency(Math.abs(difference))}
             {!isMatch && isComplete && (
               <span className="text-xs ml-1 font-normal">
                 {isPositive ? "excess" : "deficit"}
