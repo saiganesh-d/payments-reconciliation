@@ -179,8 +179,8 @@ export default function BAccountDetail({
           return;
         }
       }
+      await mutateDetail();
       setOptimisticNLocks((prev) => { const n = { ...prev }; delete n[nNameId]; return n; });
-      mutateDetail();
     } catch {
       setOptimisticNLocks((prev) => { const n = { ...prev }; delete n[nNameId]; return n; });
     }
@@ -221,8 +221,8 @@ export default function BAccountDetail({
           return;
         }
       }
+      await mutateDetail();
       setOptimisticQLocks((prev) => { const n = { ...prev }; delete n[qNameId]; return n; });
-      mutateDetail();
     } catch {
       setOptimisticQLocks((prev) => { const n = { ...prev }; delete n[qNameId]; return n; });
     }

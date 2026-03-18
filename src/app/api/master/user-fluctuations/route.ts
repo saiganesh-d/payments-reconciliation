@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
   }
   const activeDates = [...activeDatesSet].sort();
 
-  if (activeDates.length < 2) {
+  if (activeDates.length === 0) {
     return NextResponse.json({
       topFluctuators: [],
       activeDates,

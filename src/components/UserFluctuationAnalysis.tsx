@@ -45,6 +45,18 @@ interface GroupOption {
 
 type ChartView = "line" | "bar";
 
+// Generate all dates in range (inclusive), filling gaps with zeros
+function getAllDatesInRange(startDate: string, endDate: string): string[] {
+  const dates: string[] = [];
+  const current = new Date(startDate);
+  const end = new Date(endDate);
+  while (current <= end) {
+    dates.push(current.toISOString().split("T")[0]);
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+}
+
 const COLORS = [
   "#F0BD60", "#FB7185", "#4ADE80", "#60A5FA", "#C084FC",
   "#F97316", "#2DD4BF", "#E879F9", "#FBBF24", "#A78BFA",
@@ -57,6 +69,7 @@ export default function UserFluctuationAnalysis() {
   const [groupFilter, setGroupFilter] = useState<string>("");
   const [selectedUser, setSelectedUser] = useState<string>("");
   const [chartView, setChartView] = useState<ChartView>("line");
+  const [focusedLine, setFocusedLine] = useState<string | null>(null);
 
   // Fetch B-accounts
   const { data: bAccounts = [] } = useSWR<BAccountOption[]>(
@@ -103,6 +116,9 @@ export default function UserFluctuationAnalysis() {
   const allUsers = data?.topFluctuators || [];
   const activeDates = data?.activeDates || [];
 
+  // Full date range (all 7 days, filling missing with zeros)
+  const allDates = useMemo(() => getAllDatesInRange(startDate, endDate), [startDate, endDate]);
+
   // Selected user data
   const selectedUserData = selectedUser
     ? allUsers.find((u) => u.memberId === selectedUser)
@@ -112,8 +128,8 @@ export default function UserFluctuationAnalysis() {
 
   // Level 1: All users — line chart (X=dates, each line=user) or heat-style bar
   const allUsersLineData = useMemo(() => {
-    if (!activeDates.length || !allUsers.length) return [];
-    return activeDates.map((date) => {
+    if (!allDates.length || !allUsers.length) return [];
+    return allDates.map((date) => {
       const point: Record<string, string | number> = { date, label: date.slice(5) };
       for (const u of allUsers) {
         const entry = u.dailyAmounts.find((d) => d.date === date);
@@ -121,45 +137,49 @@ export default function UserFluctuationAnalysis() {
       }
       return point;
     });
-  }, [activeDates, allUsers]);
+  }, [allDates, allUsers]);
 
   // Bar chart: X=user names, grouped bars per date
   const allUsersBarData = useMemo(() => {
-    if (!allUsers.length || !activeDates.length) return [];
+    if (!allUsers.length || !allDates.length) return [];
     return allUsers.map((u) => {
       const point: Record<string, string | number> = { name: u.memberName, memberId: u.memberId };
-      for (const date of activeDates) {
+      for (const date of allDates) {
         const entry = u.dailyAmounts.find((d) => d.date === date);
         point[date] = entry?.amount || 0;
       }
       return point;
     });
-  }, [allUsers, activeDates]);
+  }, [allUsers, allDates]);
 
-  // Level 3: Single user bar data
+  // Level 3: Single user bar data — show all dates in range
   const singleUserBarData = useMemo(() => {
     if (!selectedUserData) return [];
-    return selectedUserData.dailyAmounts.map((d) => ({
-      date: d.date,
-      label: d.date.slice(5),
-      amount: d.amount,
-    }));
-  }, [selectedUserData]);
+    return allDates.map((date) => {
+      const entry = selectedUserData.dailyAmounts.find((d) => d.date === date);
+      return { date, label: date.slice(5), amount: entry?.amount || 0 };
+    });
+  }, [selectedUserData, allDates]);
 
-  // Heat map data: users as rows, cells colored by amount intensity
+  // Heat map data: users as rows, cells colored by PER-ROW intensity
   const heatMapData = useMemo(() => {
-    if (!allUsers.length || !activeDates.length) return [];
-    const maxAmount = Math.max(...allUsers.flatMap((u) => u.dailyAmounts.map((d) => d.amount)), 1);
-    return allUsers.map((u) => ({
-      ...u,
-      cells: activeDates.map((date) => {
+    if (!allUsers.length || !allDates.length) return [];
+    return allUsers.map((u) => {
+      const amounts = allDates.map((date) => {
         const entry = u.dailyAmounts.find((d) => d.date === date);
-        const amount = entry?.amount || 0;
-        const intensity = amount / maxAmount;
-        return { date, amount, intensity };
-      }),
-    }));
-  }, [allUsers, activeDates]);
+        return entry?.amount || 0;
+      });
+      const rowMax = Math.max(...amounts, 1);
+      return {
+        ...u,
+        cells: allDates.map((date, i) => ({
+          date,
+          amount: amounts[i],
+          intensity: amounts[i] / rowMax,
+        })),
+      };
+    });
+  }, [allUsers, allDates]);
 
   const selectedBName = bAccounts.find((b) => b.id === bAccountId)?.name || "";
 
@@ -176,6 +196,7 @@ export default function UserFluctuationAnalysis() {
               setBAccountId(e.target.value);
               setGroupFilter("");
               setSelectedUser("");
+              setFocusedLine(null);
             }}
             className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs min-w-[100px]"
           >
@@ -194,6 +215,7 @@ export default function UserFluctuationAnalysis() {
               onChange={(e) => {
                 setGroupFilter(e.target.value);
                 setSelectedUser("");
+                setFocusedLine(null);
               }}
               className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs min-w-[100px]"
             >
@@ -303,25 +325,45 @@ export default function UserFluctuationAnalysis() {
               {selectedBName} — {groups.find((g) => g.id === groupFilter)?.name || "Group"} — Last 7 Days
             </h3>
             {chartView === "line" ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={allUsersLineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--color-muted)" }} />
-                  <YAxis tick={{ fontSize: 10, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
-                  <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "12px", border: "1px solid var(--color-border)", fontSize: "12px" }}
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    formatter={((v: any, name: any) => { const u = allUsers.find(u => u.memberId === String(name)); return [formatCurrency(Number(v)), u?.memberName || ""]; }) as any}
-                  />
-                  <Legend formatter={(value: string) => { const u = allUsers.find(u => u.memberId === value); return u?.memberName || value; }} />
-                  {allUsers.map((u, i) => (
-                    <Line key={u.memberId} type="monotone" dataKey={u.memberId} stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
+              <div>
+                {focusedLine && (
+                  <button
+                    onClick={() => setFocusedLine(null)}
+                    className="text-[10px] text-accent mb-1 hover:underline"
+                  >
+                    Show all lines
+                  </button>
+                )}
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={allUsersLineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--color-muted)" }} />
+                    <YAxis tick={{ fontSize: 10, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
+                    <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "12px", border: "1px solid var(--color-border)", fontSize: "12px" }}
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      formatter={((v: any, name: any) => { const u = allUsers.find(u => u.memberId === String(name)); return [formatCurrency(Number(v)), u?.memberName || ""]; }) as any}
+                    />
+                    <Legend formatter={(value: string) => { const u = allUsers.find(u => u.memberId === value); return u?.memberName || value; }} />
+                    {allUsers.map((u, i) => (
+                      <Line
+                        key={u.memberId}
+                        type="monotone"
+                        dataKey={u.memberId}
+                        stroke={COLORS[i % COLORS.length]}
+                        strokeWidth={focusedLine === u.memberId ? 3 : focusedLine ? 0.5 : 2}
+                        strokeOpacity={focusedLine && focusedLine !== u.memberId ? 0.15 : 1}
+                        dot={false}
+                        activeDot={{ r: 4, cursor: "pointer", onClick: () => setFocusedLine(focusedLine === u.memberId ? null : u.memberId) }}
+                        style={{ cursor: "pointer" }}
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             ) : (
               /* Bar chart: one chart per date, bars = users */
               <div className="space-y-4 max-h-[500px] overflow-y-auto">
-                {activeDates.map((date) => (
+                {allDates.map((date) => (
                   <div key={date} className="bg-background/50 rounded-xl p-3">
                     <p className="text-xs text-muted mb-2 font-medium">{date.slice(5)}</p>
                     <ResponsiveContainer width="100%" height={140}>
@@ -358,7 +400,7 @@ export default function UserFluctuationAnalysis() {
               {/* Header: dates */}
               <div className="flex items-center gap-0.5 mb-1">
                 <div className="w-[80px] sm:w-[100px] shrink-0" />
-                {activeDates.map((d) => (
+                {allDates.map((d) => (
                   <div key={d} className="flex-1 text-center text-[9px] text-muted">{d.slice(5)}</div>
                 ))}
               </div>
@@ -401,20 +443,40 @@ export default function UserFluctuationAnalysis() {
               {chartView === "line" ? "Daily Trends" : "User Comparison"}
             </h3>
             {chartView === "line" ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={allUsersLineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--color-muted)" }} />
-                  <YAxis tick={{ fontSize: 10, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
-                  <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "12px", border: "1px solid var(--color-border)", fontSize: "12px" }}
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    formatter={((v: any, name: any) => { const u = allUsers.find(u => u.memberId === String(name)); return [formatCurrency(Number(v)), u?.memberName || ""]; }) as any}
-                  />
-                  {allUsers.map((u, i) => (
-                    <Line key={u.memberId} type="monotone" dataKey={u.memberId} stroke={COLORS[i % COLORS.length]} strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
+              <div>
+                {focusedLine && (
+                  <button
+                    onClick={() => setFocusedLine(null)}
+                    className="text-[10px] text-accent mb-1 hover:underline"
+                  >
+                    Show all lines
+                  </button>
+                )}
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={allUsersLineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.5} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--color-muted)" }} />
+                    <YAxis tick={{ fontSize: 10, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
+                    <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "12px", border: "1px solid var(--color-border)", fontSize: "12px" }}
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      formatter={((v: any, name: any) => { const u = allUsers.find(u => u.memberId === String(name)); return [formatCurrency(Number(v)), u?.memberName || ""]; }) as any}
+                    />
+                    {allUsers.map((u, i) => (
+                      <Line
+                        key={u.memberId}
+                        type="monotone"
+                        dataKey={u.memberId}
+                        stroke={COLORS[i % COLORS.length]}
+                        strokeWidth={focusedLine === u.memberId ? 3 : focusedLine ? 0.5 : 1.5}
+                        strokeOpacity={focusedLine && focusedLine !== u.memberId ? 0.15 : 1}
+                        dot={false}
+                        activeDot={{ r: 3, cursor: "pointer", onClick: () => setFocusedLine(focusedLine === u.memberId ? null : u.memberId) }}
+                        style={{ cursor: "pointer" }}
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={allUsersBarData} margin={{ top: 10, right: 10, left: -10, bottom: 40 }}>
@@ -422,7 +484,7 @@ export default function UserFluctuationAnalysis() {
                   <XAxis dataKey="name" tick={{ fontSize: 9, fill: "var(--color-muted)" }} interval={0} angle={-45} textAnchor="end" />
                   <YAxis tick={{ fontSize: 10, fill: "var(--color-muted)" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`} />
                   <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", borderRadius: "12px", border: "1px solid var(--color-border)", fontSize: "12px" }} />
-                  {activeDates.map((date, i) => (
+                  {allDates.map((date, i) => (
                     <Bar key={date} dataKey={date} name={date.slice(5)} fill={COLORS[i % COLORS.length]} radius={[2, 2, 0, 0]} />
                   ))}
                 </BarChart>
@@ -434,8 +496,10 @@ export default function UserFluctuationAnalysis() {
                 {allUsers.map((u, i) => (
                   <button
                     key={u.memberId}
-                    onClick={() => setSelectedUser(u.memberId)}
-                    className="flex items-center gap-1 hover:opacity-80 transition-opacity"
+                    onClick={() => setFocusedLine(focusedLine === u.memberId ? null : u.memberId)}
+                    className={`flex items-center gap-1 transition-opacity ${
+                      focusedLine && focusedLine !== u.memberId ? "opacity-30" : "hover:opacity-80"
+                    }`}
                   >
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
                     <span className="text-[10px] text-muted">{u.memberName}</span>
