@@ -8,35 +8,54 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Check the last 7 days for incomplete submissions
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const missedDays: { bAccountId: string; bAccountName: string; date: string }[] = [];
+  const dates: Date[] = [];
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dates.push(d);
+  }
 
   const bAccounts = await prisma.pc_b_accounts.findMany({
-    include: { pGroups: true },
+    where: session.role === "B_ACCOUNT" ? { id: session.bAccountId! } : undefined,
+    include: { pGroups: { select: { id: true } } },
   });
 
-  for (let i = 1; i <= 7; i++) {
-    const checkDate = new Date(today);
-    checkDate.setDate(checkDate.getDate() - i);
+  const bAccountsWithGroups = bAccounts.filter((ba) => ba.pGroups.length > 0);
+  if (bAccountsWithGroups.length === 0) {
+    return NextResponse.json([]);
+  }
 
-    for (const ba of bAccounts) {
-      // If this B-account is the current user's (for B_ACCOUNT role)
-      if (session.role === "B_ACCOUNT" && session.bAccountId !== ba.id) continue;
+  const baIds = bAccountsWithGroups.map((ba) => ba.id);
 
-      if (ba.pGroups.length === 0) continue;
+  // Only check version 1 — V1 non-finalized = missed
+  const allDaySubmissions = await prisma.pc_day_submissions.findMany({
+    where: {
+      bAccountId: { in: baIds },
+      date: { in: dates },
+      version: 1,
+      status: "FINALIZED",
+    },
+    select: { bAccountId: true, date: true },
+  });
 
-      const daySubmission = await prisma.pc_day_submissions.findFirst({
-        where: { bAccountId: ba.id, date: checkDate },
-      });
+  const finalizedSet = new Set(
+    allDaySubmissions.map((d) => `${d.bAccountId}_${d.date.toISOString().split("T")[0]}`)
+  );
 
-      if (!daySubmission || daySubmission.status !== "FINALIZED") {
+  const missedDays: { bAccountId: string; bAccountName: string; date: string }[] = [];
+  const baNameMap = new Map(bAccountsWithGroups.map((ba) => [ba.id, ba.name]));
+
+  for (const date of dates) {
+    const dateStr = date.toISOString().split("T")[0];
+    for (const ba of bAccountsWithGroups) {
+      if (!finalizedSet.has(`${ba.id}_${dateStr}`)) {
         missedDays.push({
           bAccountId: ba.id,
-          bAccountName: ba.name,
-          date: checkDate.toISOString().split("T")[0],
+          bAccountName: baNameMap.get(ba.id)!,
+          date: dateStr,
         });
       }
     }

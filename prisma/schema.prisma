@@ -40,6 +40,7 @@ model pc_b_accounts {
   users     pc_users[]
   pGroups   pc_p_groups[]
   nNames    pc_n_names[]
+  qNames    pc_q_names[]
   createdAt DateTime @default(now())
 }
 
@@ -83,21 +84,24 @@ model pc_daily_entries {
   bAccountId String
   pGroupId   String
   memberId   String
+  version    Int       @default(1)
   amount     Int       @default(0)
   isLocked   Boolean   @default(false)
   lockedAt   DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  @@unique([date, memberId])
+  @@unique([date, memberId, version])
 }
 
 model pc_daily_n_entries {
-  id         String   @id @default(cuid())
-  date       DateTime @db.Date
+  id         String    @id @default(cuid())
+  date       DateTime  @db.Date
   bAccountId String
   nNameId    String
-  amount     Int      @default(0)
+  amount     Int       @default(0)
+  isLocked   Boolean   @default(false)
+  lockedAt   DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -109,20 +113,47 @@ model pc_group_submissions {
   date        DateTime         @db.Date
   bAccountId  String
   pGroupId    String
+  version     Int              @default(1)
   status      SubmissionStatus @default(PENDING)
   submittedAt DateTime?
 
-  @@unique([date, pGroupId])
+  @@unique([date, pGroupId, version])
 }
 
 model pc_day_submissions {
   id          String    @id @default(cuid())
   date        DateTime  @db.Date
   bAccountId  String
+  version     Int       @default(1)
   status      DayStatus @default(NOT_STARTED)
   finalizedAt DateTime?
 
-  @@unique([date, bAccountId])
+  @@unique([date, bAccountId, version])
+}
+
+model pc_q_names {
+  id         String   @id @default(cuid())
+  name       String
+  bAccountId String
+  bAccount   pc_b_accounts @relation(fields: [bAccountId], references: [id])
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@unique([bAccountId, name])
+}
+
+model pc_daily_q_entries {
+  id         String    @id @default(cuid())
+  date       DateTime  @db.Date
+  bAccountId String
+  qNameId    String
+  amount     Int       @default(0)
+  isLocked   Boolean   @default(false)
+  lockedAt   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([date, qNameId])
 }
 
 model pc_audit_logs {

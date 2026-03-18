@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import useSWR from "swr";
 import { motion } from "framer-motion";
-import { Building2, TrendingUp, TrendingDown, CheckCircle2, Clock, AlertTriangle, ArrowRight } from "lucide-react";
+import { Building2, CheckCircle2, Clock, AlertTriangle, ArrowRight, ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import DateNavigation from "./DateNavigation";
 import MissedDayBanner from "./MissedDayBanner";
+import DifferenceChart from "./DifferenceChart";
 import { getISTDate, formatCurrency } from "@/lib/utils";
+import { fetcher } from "@/lib/fetcher";
 
 interface BAccountSummary {
   id: string;
@@ -16,55 +19,37 @@ interface BAccountSummary {
   status: string;
   pTotal: number;
   nTotal: number;
+  qTotal: number;
   difference: number;
   nNameCount: number;
+  qNameCount: number;
 }
 
 export default function MasterDashboard() {
   const todayDate = getISTDate();
   const [currentDate, setCurrentDate] = useState(todayDate);
-  const [bAccounts, setBAccounts] = useState<BAccountSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [missedDays, setMissedDays] = useState<{ bAccountId: string; bAccountName: string; date: string }[]>([]);
+  const [showChart, setShowChart] = useState(false);
   const router = useRouter();
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/master/b-accounts?date=${currentDate}`);
-      const data = await res.json();
-      setBAccounts(data);
-    } catch (err) {
-      console.error("Failed to fetch:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentDate]);
+  const { data: bAccounts = [], isLoading } = useSWR<BAccountSummary[]>(
+    `/api/master/b-accounts?date=${currentDate}`,
+    fetcher,
+    { revalidateOnFocus: true, dedupingInterval: 5000 }
+  );
 
-  const fetchMissedDays = useCallback(async () => {
-    try {
-      const res = await fetch("/api/master/missed-days");
-      const data = await res.json();
-      setMissedDays(data);
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  useEffect(() => {
-    fetchMissedDays();
-  }, [fetchMissedDays]);
+  const { data: missedDays = [] } = useSWR<{ bAccountId: string; bAccountName: string; date: string }[]>(
+    "/api/master/missed-days",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
 
   const totalPAmount = bAccounts.reduce((sum, ba) => sum + ba.pTotal, 0);
   const totalNAmount = bAccounts.reduce((sum, ba) => sum + ba.nTotal, 0);
-  const totalDifference = totalPAmount - totalNAmount;
+  const totalQAmount = bAccounts.reduce((sum, ba) => sum + ba.qTotal, 0);
+  const totalDifference = (totalPAmount + totalQAmount) - totalNAmount;
   const uniqueMissedDates = [...new Set(missedDays.map((d) => d.date))];
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-4">
         <div className="h-12 shimmer bg-surface rounded-xl" />
@@ -94,15 +79,21 @@ export default function MasterDashboard() {
 
       {/* Overall Summary */}
       <div className="glass-card p-5 sm:p-6">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
-            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">P-Groups Total</p>
+            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">P-Total</p>
             <p className="text-xl sm:text-2xl font-bold mt-1" style={{ fontFamily: 'Outfit, sans-serif' }}>
               {formatCurrency(totalPAmount)}
             </p>
           </div>
           <div>
-            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">N-Names Total</p>
+            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">Q-Total</p>
+            <p className="text-xl sm:text-2xl font-bold mt-1" style={{ fontFamily: 'Outfit, sans-serif' }}>
+              {formatCurrency(totalQAmount)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] text-muted font-medium uppercase tracking-wider">N-Total</p>
             <p className="text-xl sm:text-2xl font-bold mt-1" style={{ fontFamily: 'Outfit, sans-serif' }}>
               {formatCurrency(totalNAmount)}
             </p>
@@ -114,8 +105,29 @@ export default function MasterDashboard() {
             }`} style={{ fontFamily: 'Outfit, sans-serif' }}>
               {totalDifference === 0 ? "₹0" : formatCurrency(Math.abs(totalDifference))}
             </p>
+            <p className="text-[10px] text-muted">(P + Q) - N</p>
           </div>
         </div>
+      </div>
+
+      {/* Difference Chart — collapsible */}
+      <div className="glass-card overflow-hidden">
+        <button
+          onClick={() => setShowChart(!showChart)}
+          className="w-full flex items-center justify-between p-4 hover:bg-surface-hover/50 transition-colors"
+        >
+          <span className="text-sm font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>
+            Daily Difference Chart
+          </span>
+          <motion.div animate={{ rotate: showChart ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown className="w-4 h-4 text-muted" />
+          </motion.div>
+        </button>
+        {showChart && (
+          <div className="px-4 pb-4">
+            <DifferenceChart />
+          </div>
+        )}
       </div>
 
       {/* B-Account Cards */}
@@ -125,7 +137,7 @@ export default function MasterDashboard() {
         </h2>
 
         {bAccounts.map((ba, i) => {
-          const isMatch = ba.difference === 0 && ba.pTotal > 0;
+          const isMatch = ba.difference === 0 && (ba.pTotal > 0 || ba.qTotal > 0);
           const statusColor =
             ba.status === "FINALIZED" ? "text-success" : ba.status === "PARTIAL" ? "text-warning" : "text-muted";
           const StatusIcon =
@@ -160,21 +172,25 @@ export default function MasterDashboard() {
                 <ArrowRight className="w-5 h-5 text-muted group-hover:text-accent transition-colors" />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-2">
                 <div className="bg-background/50 rounded-xl p-3">
-                  <p className="text-[10px] text-muted uppercase">P-Total</p>
+                  <p className="text-[10px] text-muted uppercase">P</p>
                   <p className="text-sm font-bold mt-0.5">{formatCurrency(ba.pTotal)}</p>
                 </div>
                 <div className="bg-background/50 rounded-xl p-3">
-                  <p className="text-[10px] text-muted uppercase">N-Total</p>
+                  <p className="text-[10px] text-muted uppercase">Q</p>
+                  <p className="text-sm font-bold mt-0.5">{formatCurrency(ba.qTotal)}</p>
+                </div>
+                <div className="bg-background/50 rounded-xl p-3">
+                  <p className="text-[10px] text-muted uppercase">N</p>
                   <p className="text-sm font-bold mt-0.5">{formatCurrency(ba.nTotal)}</p>
                 </div>
                 <div className={`rounded-xl p-3 ${
-                  isMatch ? "bg-success/10" : ba.pTotal === 0 && ba.nTotal === 0 ? "bg-background/50" : "bg-danger/10"
+                  isMatch ? "bg-success/10" : ba.pTotal === 0 && ba.nTotal === 0 && ba.qTotal === 0 ? "bg-background/50" : "bg-danger/10"
                 }`}>
                   <p className="text-[10px] text-muted uppercase">Diff</p>
                   <p className={`text-sm font-bold mt-0.5 ${
-                    isMatch ? "text-success" : ba.pTotal === 0 && ba.nTotal === 0 ? "text-muted" : "text-danger"
+                    isMatch ? "text-success" : ba.pTotal === 0 && ba.nTotal === 0 && ba.qTotal === 0 ? "text-muted" : "text-danger"
                   }`}>
                     {ba.difference === 0 ? "₹0" : formatCurrency(Math.abs(ba.difference))}
                   </p>

@@ -76,20 +76,23 @@ export default function ManageGroups({
     if (!newGroupName.trim()) return;
     setCreatingGroup(true);
     setError("");
+    const trimmed = newGroupName.trim();
     try {
       const res = await fetch("/api/admin/p-groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bAccountId, name: newGroupName.trim() }),
+        body: JSON.stringify({ bAccountId, name: trimmed }),
       });
       if (!res.ok) {
         const data = await res.json();
         setError(data.error);
         return;
       }
+      const created = await res.json();
+      // Optimistic: add to list without refetching
+      setGroups((prev) => [...prev, { id: created.id, name: trimmed, members: [] }]);
       setNewGroupName("");
       setShowNewGroup(false);
-      fetchGroups();
     } finally {
       setCreatingGroup(false);
     }
@@ -98,23 +101,34 @@ export default function ManageGroups({
   const handleRenameGroup = async (id: string) => {
     if (!editGroupName.trim()) return;
     setError("");
+    const trimmed = editGroupName.trim();
+
+    // Optimistic update
+    const previousGroups = groups;
+    setGroups((prev) => prev.map((g) => g.id === id ? { ...g, name: trimmed } : g));
+    setEditingGroupId(null);
+
     const res = await fetch("/api/admin/p-groups", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, name: editGroupName.trim() }),
+      body: JSON.stringify({ id, name: trimmed }),
     });
     if (!res.ok) {
       const data = await res.json();
       setError(data.error);
-      return;
+      setGroups(previousGroups); // rollback
     }
-    setEditingGroupId(null);
-    fetchGroups();
   };
 
   const handleDeleteGroup = async (id: string, name: string) => {
     if (!confirm(`Delete group "${name}"? This cannot be undone.`)) return;
     setError("");
+
+    // Optimistic: remove from UI immediately
+    const previousGroups = groups;
+    setGroups((prev) => prev.filter((g) => g.id !== id));
+    if (expandedGroup === id) setExpandedGroup(null);
+
     const res = await fetch("/api/admin/p-groups", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -123,30 +137,39 @@ export default function ManageGroups({
     if (!res.ok) {
       const data = await res.json();
       setError(data.error);
-      return;
+      setGroups(previousGroups); // rollback
     }
-    fetchGroups();
   };
 
   const handleAddMember = async (pGroupId: string) => {
     if (!newMemberName.trim()) return;
     setCreatingMember(true);
     setError("");
+    const trimmedName = newMemberName.trim();
+    const trimmedNote = newMemberNote.trim() || null;
     try {
       const res = await fetch("/api/admin/members", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pGroupId, name: newMemberName.trim(), note: newMemberNote.trim() || undefined }),
+        body: JSON.stringify({ pGroupId, name: trimmedName, note: trimmedNote || undefined }),
       });
       if (!res.ok) {
         const data = await res.json();
         setError(data.error);
         return;
       }
+      const created = await res.json();
+      // Optimistic: add member to group without refetching
+      setGroups((prev) =>
+        prev.map((g) =>
+          g.id === pGroupId
+            ? { ...g, members: [...g.members, { id: created.id, name: trimmedName, note: trimmedNote, isActive: true }] }
+            : g
+        )
+      );
       setNewMemberName("");
       setNewMemberNote("");
       setAddingMemberGroupId(null);
-      fetchGroups();
     } finally {
       setCreatingMember(false);
     }
@@ -155,23 +178,48 @@ export default function ManageGroups({
   const handleRenameMember = async (id: string) => {
     if (!editMemberName.trim()) return;
     setError("");
+    const trimmedName = editMemberName.trim();
+    const trimmedNote = editMemberNote.trim() || null;
+
+    // Optimistic update
+    const previousGroups = groups;
+    setGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        members: g.members.map((m) =>
+          m.id === id ? { ...m, name: trimmedName, note: trimmedNote } : m
+        ),
+      }))
+    );
+    setEditingMemberId(null);
+
     const res = await fetch("/api/admin/members", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, name: editMemberName.trim(), note: editMemberNote.trim() || null }),
+      body: JSON.stringify({ id, name: trimmedName, note: trimmedNote }),
     });
     if (!res.ok) {
       const data = await res.json();
       setError(data.error);
-      return;
+      setGroups(previousGroups); // rollback
     }
-    setEditingMemberId(null);
-    fetchGroups();
   };
 
   const handleDeleteMember = async (id: string, name: string) => {
     if (!confirm(`Remove "${name}" from this group? Historical entries will be preserved.`)) return;
     setError("");
+
+    // Optimistic: remove member from UI immediately
+    const previousGroups = groups;
+    setGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        members: g.members.map((m) =>
+          m.id === id ? { ...m, isActive: false } : m
+        ),
+      }))
+    );
+
     const res = await fetch("/api/admin/members", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -180,9 +228,8 @@ export default function ManageGroups({
     if (!res.ok) {
       const data = await res.json();
       setError(data.error);
-      return;
+      setGroups(previousGroups); // rollback
     }
-    fetchGroups();
   };
 
   if (loading) {

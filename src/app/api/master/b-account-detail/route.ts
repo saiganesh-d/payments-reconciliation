@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
         orderBy: { name: "asc" },
       },
       nNames: { where: { isActive: true }, orderBy: { name: "asc" } },
+      qNames: { where: { isActive: true }, orderBy: { name: "asc" } },
     },
   });
 
@@ -30,27 +31,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "B-Account not found" }, { status: 404 });
   }
 
-  const entries = await prisma.pc_daily_entries.findMany({
-    where: { bAccountId, date: new Date(date) },
-  });
-
-  const nEntries = await prisma.pc_daily_n_entries.findMany({
-    where: { bAccountId, date: new Date(date) },
-  });
-
-  const groupSubmissions = await prisma.pc_group_submissions.findMany({
-    where: { bAccountId, date: new Date(date) },
-  });
-
-  const daySubmission = await prisma.pc_day_submissions.findFirst({
-    where: { bAccountId, date: new Date(date) },
-  });
+  const [entries, nEntries, qEntries, groupSubmissions, daySubmissions] = await Promise.all([
+    prisma.pc_daily_entries.findMany({
+      where: { bAccountId, date: new Date(date) },
+    }),
+    prisma.pc_daily_n_entries.findMany({
+      where: { bAccountId, date: new Date(date) },
+    }),
+    prisma.pc_daily_q_entries.findMany({
+      where: { bAccountId, date: new Date(date) },
+    }),
+    prisma.pc_group_submissions.findMany({
+      where: { bAccountId, date: new Date(date) },
+    }),
+    prisma.pc_day_submissions.findMany({
+      where: { bAccountId, date: new Date(date) },
+    }),
+  ]);
 
   return NextResponse.json({
     bAccount,
     entries,
     nEntries,
+    qEntries,
     groupSubmissions,
-    daySubmission,
+    daySubmissions,
   });
 }

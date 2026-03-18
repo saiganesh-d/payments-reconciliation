@@ -28,6 +28,7 @@ interface GroupAccordionProps {
   isDayFinalized: boolean;
   onAmountChange: (memberId: string, amount: number) => void;
   onLockEntry: (memberId: string) => void;
+  onUnlockEntry: (memberId: string) => void;
   onSubmitGroup: () => void;
 }
 
@@ -45,20 +46,15 @@ function NoteTooltip({ note }: { note: string }) {
       >
         <Info className="w-3.5 h-3.5" />
       </button>
-      <AnimatePresence>
-        {show && (
-          <motion.div
-            initial={{ opacity: 0, y: 4, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.95 }}
-            transition={{ duration: 0.15 }}
-            className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-50 px-3 py-2 rounded-lg bg-surface border border-border shadow-xl text-xs text-foreground whitespace-nowrap max-w-[200px] text-center"
-          >
-            {note}
-            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-border" />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {show && (
+        <div
+          className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 px-3 py-2 rounded-lg bg-surface border border-border shadow-2xl text-xs text-foreground max-w-[220px] text-center animate-in fade-in duration-100"
+          style={{ whiteSpace: "normal", wordBreak: "break-word" }}
+        >
+          {note}
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-b-[5px] border-b-border" />
+        </div>
+      )}
     </span>
   );
 }
@@ -70,6 +66,7 @@ export default function GroupAccordion({
   isDayFinalized,
   onAmountChange,
   onLockEntry,
+  onUnlockEntry,
   onSubmitGroup,
 }: GroupAccordionProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -153,70 +150,77 @@ export default function GroupAccordion({
                 const entry = getEntry(member.id);
                 const isLocked = entry?.isLocked || false;
                 const amount = entry?.amount || 0;
-                const isReadOnly = isLocked || isSubmitted || isDayFinalized;
+                const isReadOnly = (isLocked || isSubmitted || isDayFinalized);
 
                 return (
                   <div
                     key={member.id}
-                    className={`flex items-center gap-3 p-3 rounded-xl transition-all ${
+                    className={`rounded-xl transition-all ${
                       isLocked
-                        ? "bg-background/50 border border-border/50"
+                        ? "bg-background/50 border border-success/20"
                         : "bg-background border border-border"
                     }`}
                   >
-                    {/* Name + Note */}
-                    <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                      <span className="text-sm font-medium truncate">
-                        {member.name}
-                      </span>
-                      {member.note && <NoteTooltip note={member.note} />}
-                    </div>
-
-                    {/* Amount Input */}
-                    <div className="relative w-28 sm:w-32">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted">₹</span>
-                      <input
-                        type="number"
-                        value={amount || ""}
-                        onChange={(e) => onAmountChange(member.id, parseInt(e.target.value) || 0)}
-                        disabled={isReadOnly}
-                        placeholder="0"
-                        className={`w-full pl-7 pr-3 py-2 rounded-lg text-sm text-right font-medium transition-all ${
-                          isReadOnly
-                            ? "bg-surface/50 text-muted border border-transparent cursor-not-allowed"
-                            : "bg-surface border border-border focus:border-accent/50 focus:ring-1 focus:ring-accent/20 focus:outline-none"
-                        }`}
-                      />
-                    </div>
-
-                    {/* Lock Button */}
-                    {!isSubmitted && !isDayFinalized && (
-                      <button
-                        onClick={() => onLockEntry(member.id)}
-                        disabled={isLocked || !amount}
-                        className={`p-2 rounded-lg transition-all ${
-                          isLocked
-                            ? "bg-success/10 text-success cursor-default"
-                            : amount
-                              ? "bg-warning/10 text-warning hover:bg-warning/20"
-                              : "bg-surface text-muted/30 cursor-not-allowed"
-                        }`}
-                        title={isLocked ? "Locked" : "Click to lock"}
-                      >
-                        {isLocked ? (
-                          <Lock className="w-4 h-4" />
-                        ) : (
-                          <Unlock className="w-4 h-4" />
-                        )}
-                      </button>
-                    )}
-
-                    {/* Submitted check */}
-                    {(isSubmitted || isDayFinalized) && (
-                      <div className="p-2 text-success">
-                        <Check className="w-4 h-4" />
+                    <div className="flex items-center gap-3 p-3 sm:p-4">
+                      {/* Name + Note */}
+                      <div className="min-w-0 flex items-center gap-1.5 w-[120px] sm:w-[160px] shrink-0">
+                        <span className={`text-sm font-medium truncate ${isLocked ? "text-muted" : ""}`}>
+                          {member.name}
+                        </span>
+                        {member.note && <NoteTooltip note={member.note} />}
                       </div>
-                    )}
+
+                      {/* Amount Input — prominent */}
+                      <div className="flex-1 flex items-center justify-center">
+                        <div className={`relative w-full max-w-[200px] ${isLocked ? "" : ""}`}>
+                          <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm ${isLocked ? "text-success/60" : "text-muted"}`}>₹</span>
+                          <input
+                            type="number"
+                            value={amount || ""}
+                            onChange={(e) => onAmountChange(member.id, parseInt(e.target.value) || 0)}
+                            disabled={isReadOnly}
+                            placeholder="0"
+                            className={`w-full pl-8 pr-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
+                              isLocked
+                                ? "bg-success/5 text-success border border-success/20 cursor-not-allowed"
+                                : amount
+                                  ? "bg-accent/5 text-accent border border-accent/30 focus:border-accent/60 focus:ring-2 focus:ring-accent/15 focus:outline-none"
+                                  : "bg-surface border border-border text-foreground focus:border-accent/50 focus:ring-2 focus:ring-accent/15 focus:outline-none"
+                            }`}
+                            style={{ fontFamily: 'Outfit, sans-serif' }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Lock / Unlock Toggle */}
+                      {!isSubmitted && !isDayFinalized && (
+                        <button
+                          onClick={() => isLocked ? onUnlockEntry(member.id) : onLockEntry(member.id)}
+                          disabled={!isLocked && !amount}
+                          className={`p-3 rounded-xl transition-all shrink-0 ${
+                            isLocked
+                              ? "bg-success/10 text-success hover:bg-warning/10 hover:text-warning"
+                              : amount
+                                ? "bg-accent/10 text-accent hover:bg-accent/20"
+                                : "bg-surface text-muted/30 cursor-not-allowed"
+                          }`}
+                          title={isLocked ? "Click to unlock" : amount ? "Click to lock" : "Enter amount first"}
+                        >
+                          {isLocked ? (
+                            <Lock className="w-5 h-5" />
+                          ) : (
+                            <Unlock className="w-5 h-5" />
+                          )}
+                        </button>
+                      )}
+
+                      {/* Submitted check */}
+                      {(isSubmitted || isDayFinalized) && (
+                        <div className="p-3 text-success shrink-0">
+                          <Check className="w-5 h-5" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}

@@ -33,15 +33,15 @@ export async function POST(req: NextRequest) {
     data: { isLocked: false, lockedAt: null },
   });
 
-  // Also revert group submission if it was submitted
+  // Also revert group submission if it was submitted (use entry's version)
   await prisma.pc_group_submissions.updateMany({
-    where: { date: entry.date, pGroupId: entry.pGroupId },
+    where: { date: entry.date, pGroupId: entry.pGroupId, version: entry.version },
     data: { status: "PENDING", submittedAt: null },
   });
 
   // Revert day submission
   await prisma.pc_day_submissions.updateMany({
-    where: { date: entry.date, bAccountId: entry.bAccountId, status: "FINALIZED" },
+    where: { date: entry.date, bAccountId: entry.bAccountId, version: entry.version, status: "FINALIZED" },
     data: { status: "PARTIAL", finalizedAt: null },
   });
 

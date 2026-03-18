@@ -4,7 +4,11 @@
       "Bash(cd:*)",
       "Read(//c/Users/saiga/Desktop/**)",
       "Bash(npx create-next-app@latest updatesportal_temp --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm --no-turbopack)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(find:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(npx prisma:*)"
     ]
   }
 }

@@ -8,9 +8,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { date } = await req.json();
+  const { date, version = 1 } = await req.json();
 
-  // Verify all groups are submitted
+  // Gate: if version > 1, verify previous version is FINALIZED
+  if (version > 1) {
+    const prevDaySub = await prisma.pc_day_submissions.findFirst({
+      where: { bAccountId: session.bAccountId, date: new Date(date), version: version - 1 },
+    });
+    if (prevDaySub?.status !== "FINALIZED") {
+      return NextResponse.json(
+        { error: `Version ${version - 1} must be finalized before starting version ${version}` },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Verify all groups are submitted for this version
   const groups = await prisma.pc_p_groups.findMany({
     where: { bAccountId: session.bAccountId },
   });
@@ -19,6 +32,7 @@ export async function POST(req: NextRequest) {
     where: {
       date: new Date(date),
       bAccountId: session.bAccountId,
+      version,
     },
   });
 
@@ -32,10 +46,11 @@ export async function POST(req: NextRequest) {
   }
 
   const daySubmission = await prisma.pc_day_submissions.upsert({
-    where: { date_bAccountId: { date: new Date(date), bAccountId: session.bAccountId } },
+    where: { date_bAccountId_version: { date: new Date(date), bAccountId: session.bAccountId, version } },
     create: {
       date: new Date(date),
       bAccountId: session.bAccountId,
+      version,
       status: "FINALIZED",
       finalizedAt: new Date(),
     },

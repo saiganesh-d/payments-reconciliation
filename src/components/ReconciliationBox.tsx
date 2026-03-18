@@ -7,11 +7,12 @@ import { TrendingUp, TrendingDown, Minus, AlertCircle } from "lucide-react";
 interface ReconciliationBoxProps {
   pGroupTotal: number;
   nNameTotal: number;
+  qNameTotal?: number;
   isComplete: boolean;
 }
 
-export default function ReconciliationBox({ pGroupTotal, nNameTotal, isComplete }: ReconciliationBoxProps) {
-  const difference = pGroupTotal - nNameTotal;
+export default function ReconciliationBox({ pGroupTotal, nNameTotal, qNameTotal = 0, isComplete }: ReconciliationBoxProps) {
+  const difference = (pGroupTotal + qNameTotal) - nNameTotal;
   const isMatch = difference === 0;
   const isPositive = difference > 0;
 
@@ -33,6 +34,14 @@ export default function ReconciliationBox({ pGroupTotal, nNameTotal, isComplete 
           <span className="text-sm text-muted">P-Groups Total</span>
           <span className="text-sm font-semibold">{formatCurrency(pGroupTotal)}</span>
         </div>
+
+        {/* Q-Names Total */}
+        {qNameTotal > 0 && (
+          <div className="flex items-center justify-between py-2">
+            <span className="text-sm text-muted">Q-Names Total</span>
+            <span className="text-sm font-semibold">{formatCurrency(qNameTotal)}</span>
+          </div>
+        )}
 
         {/* N-Names Total */}
         <div className="flex items-center justify-between py-2">
@@ -66,7 +75,9 @@ export default function ReconciliationBox({ pGroupTotal, nNameTotal, isComplete 
             ) : (
               <TrendingDown className="w-4 h-4 text-danger" />
             )}
-            <span className="text-sm font-medium">Difference</span>
+            <span className="text-sm font-medium">
+              Difference {qNameTotal > 0 ? "(P + Q) - N" : "P - N"}
+            </span>
           </div>
           <span className={`text-lg font-bold ${
             !isComplete

@@ -8,9 +8,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { date, pGroupId } = await req.json();
+  const { date, pGroupId, version = 1 } = await req.json();
 
-  // Verify all members in the group have locked entries
+  // Verify all members in the group have locked entries for this version
   const members = await prisma.pc_p_group_members.findMany({
     where: { pGroupId, isActive: true },
   });
@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
       date: new Date(date),
       pGroupId,
       bAccountId: session.bAccountId,
+      version,
     },
   });
 
@@ -33,11 +34,12 @@ export async function POST(req: NextRequest) {
   }
 
   const submission = await prisma.pc_group_submissions.upsert({
-    where: { date_pGroupId: { date: new Date(date), pGroupId } },
+    where: { date_pGroupId_version: { date: new Date(date), pGroupId, version } },
     create: {
       date: new Date(date),
       bAccountId: session.bAccountId,
       pGroupId,
+      version,
       status: "SUBMITTED",
       submittedAt: new Date(),
     },

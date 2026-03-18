@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import useSWR, { mutate } from "swr";
 import { motion } from "framer-motion";
-import { Send, Loader2, CheckCircle2 } from "lucide-react";
+import { Send, Loader2, CheckCircle2, Lock } from "lucide-react";
 import DateNavigation from "./DateNavigation";
 import SummaryCard from "./SummaryCard";
 import GroupAccordion from "./GroupAccordion";
 import MissedDayBanner from "./MissedDayBanner";
 import { getISTDate } from "@/lib/utils";
+import { fetcher } from "@/lib/fetcher";
 
 interface Group {
   id: string;
@@ -31,66 +33,67 @@ interface DaySubmission {
   status: string;
 }
 
+interface EntriesData {
+  groups: Group[];
+  entries: Entry[];
+  groupSubmissions: GroupSubmission[];
+  daySubmission: DaySubmission | null;
+}
+
+interface VersionStatus {
+  version: number;
+  status: string;
+}
+
 export default function BAccountDashboard({ bAccountId }: { bAccountId: string }) {
   const todayDate = getISTDate();
   const [currentDate, setCurrentDate] = useState(todayDate);
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [groupSubmissions, setGroupSubmissions] = useState<GroupSubmission[]>([]);
-  const [daySubmission, setDaySubmission] = useState<DaySubmission | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [currentVersion, setCurrentVersion] = useState(1);
   const [submitting, setSubmitting] = useState(false);
-  const [missedDates, setMissedDates] = useState<string[]>([]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/entries?date=${currentDate}`);
-      const data = await res.json();
-      setGroups(data.groups || []);
-      setEntries(data.entries || []);
-      setGroupSubmissions(data.groupSubmissions || []);
-      setDaySubmission(data.daySubmission || null);
-    } catch (err) {
-      console.error("Failed to fetch data:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentDate]);
+  // SWR: fetch version statuses
+  const versionsKey = `/api/entries/versions?date=${currentDate}&bAccountId=${bAccountId}`;
+  const { data: versionStatuses = [] } = useSWR<VersionStatus[]>(versionsKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 5000,
+  });
 
-  const fetchMissedDays = useCallback(async () => {
-    try {
-      const res = await fetch("/api/master/missed-days");
-      const data = await res.json();
-      setMissedDates(data.map((d: { date: string }) => d.date));
-    } catch {
-      // ignore
-    }
-  }, []);
+  // SWR: auto-cache, deduplicate, revalidate on focus
+  const entriesKey = `/api/entries?date=${currentDate}&version=${currentVersion}`;
+  const { data, isLoading, mutate: mutateEntries } = useSWR<EntriesData>(entriesKey, fetcher, {
+    revalidateOnFocus: true,
+    dedupingInterval: 5000,
+  });
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const { data: missedData } = useSWR<{ date: string }[]>(
+    "/api/master/missed-days",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
 
-  useEffect(() => {
-    fetchMissedDays();
-  }, [fetchMissedDays]);
+  const groups = data?.groups || [];
+  const entries = data?.entries || [];
+  const groupSubmissions = data?.groupSubmissions || [];
+  const daySubmission = data?.daySubmission || null;
+  const missedDates = missedData?.map((d) => d.date) || [];
 
   const handleAmountChange = async (memberId: string, amount: number, pGroupId: string) => {
-    // Optimistic update
-    setEntries((prev) => {
-      const existing = prev.find((e) => e.memberId === memberId);
-      if (existing) {
-        return prev.map((e) => (e.memberId === memberId ? { ...e, amount } : e));
-      }
-      return [...prev, { memberId, amount, isLocked: false, pGroupId }];
-    });
+    mutateEntries(
+      (prev) => {
+        if (!prev) return prev;
+        const existing = prev.entries.find((e) => e.memberId === memberId);
+        const newEntries = existing
+          ? prev.entries.map((e) => (e.memberId === memberId ? { ...e, amount } : e))
+          : [...prev.entries, { memberId, amount, isLocked: false, pGroupId }];
+        return { ...prev, entries: newEntries };
+      },
+      { revalidate: false }
+    );
 
-    // Debounced save
     await fetch("/api/entries", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: currentDate, pGroupId, memberId, amount }),
+      body: JSON.stringify({ date: currentDate, pGroupId, memberId, amount, version: currentVersion }),
     });
   };
 
@@ -98,12 +101,44 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
     const res = await fetch("/api/entries/lock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: currentDate, memberId }),
+      body: JSON.stringify({ date: currentDate, memberId, version: currentVersion }),
     });
 
     if (res.ok) {
-      setEntries((prev) =>
-        prev.map((e) => (e.memberId === memberId ? { ...e, isLocked: true } : e))
+      mutateEntries(
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            entries: prev.entries.map((e) =>
+              e.memberId === memberId ? { ...e, isLocked: true } : e
+            ),
+          };
+        },
+        { revalidate: false }
+      );
+    }
+  };
+
+  const handleUnlockEntry = async (memberId: string) => {
+    const res = await fetch("/api/entries/b-unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: currentDate, memberId, version: currentVersion }),
+    });
+
+    if (res.ok) {
+      mutateEntries(
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            entries: prev.entries.map((e) =>
+              e.memberId === memberId ? { ...e, isLocked: false } : e
+            ),
+          };
+        },
+        { revalidate: false }
       );
     }
   };
@@ -112,17 +147,23 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
     const res = await fetch("/api/groups/submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: currentDate, pGroupId }),
+      body: JSON.stringify({ date: currentDate, pGroupId, version: currentVersion }),
     });
 
     if (res.ok) {
-      setGroupSubmissions((prev) => {
-        const existing = prev.find((s) => s.pGroupId === pGroupId);
-        if (existing) {
-          return prev.map((s) => (s.pGroupId === pGroupId ? { ...s, status: "SUBMITTED" } : s));
-        }
-        return [...prev, { pGroupId, status: "SUBMITTED" }];
-      });
+      mutateEntries(
+        (prev) => {
+          if (!prev) return prev;
+          const existing = prev.groupSubmissions.find((s) => s.pGroupId === pGroupId);
+          const newSubs = existing
+            ? prev.groupSubmissions.map((s) =>
+                s.pGroupId === pGroupId ? { ...s, status: "SUBMITTED" } : s
+              )
+            : [...prev.groupSubmissions, { pGroupId, status: "SUBMITTED" }];
+          return { ...prev, groupSubmissions: newSubs };
+        },
+        { revalidate: false }
+      );
     }
   };
 
@@ -132,11 +173,21 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
       const res = await fetch("/api/day/finalize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: currentDate }),
+        body: JSON.stringify({ date: currentDate, version: currentVersion }),
       });
 
       if (res.ok) {
-        setDaySubmission({ status: "FINALIZED" });
+        mutateEntries(
+          (prev) => prev ? { ...prev, daySubmission: { status: "FINALIZED" } } : prev,
+          { revalidate: false }
+        );
+        // Revalidate versions and missed days
+        mutate(versionsKey);
+        mutate("/api/master/missed-days");
+        // Auto-switch to next version if available
+        if (currentVersion < 3) {
+          setCurrentVersion(currentVersion + 1);
+        }
       }
     } finally {
       setSubmitting(false);
@@ -150,9 +201,15 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
   const groupsDone = submittedGroupIds.length;
   const allGroupsSubmitted = groups.length > 0 && groupsDone === groups.length;
   const isDayFinalized = daySubmission?.status === "FINALIZED";
-  const isReadOnly = currentDate !== todayDate && isDayFinalized;
 
-  if (loading) {
+  // Version tab logic
+  const isVersionEnabled = (v: number) => {
+    if (v === 1) return true;
+    const prevStatus = versionStatuses.find((vs) => vs.version === v - 1);
+    return prevStatus?.status === "FINALIZED";
+  };
+
+  if (isLoading) {
     return (
       <div className="space-y-4">
         <div className="h-12 shimmer bg-surface rounded-xl" />
@@ -169,15 +226,44 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <DateNavigation
           currentDate={currentDate}
-          onDateChange={setCurrentDate}
+          onDateChange={(d) => { setCurrentDate(d); setCurrentVersion(1); }}
           todayDate={todayDate}
         />
+      </div>
+
+      {/* Version Tabs */}
+      <div className="flex gap-1 p-1 bg-surface rounded-xl border border-border">
+        {[1, 2, 3].map((v) => {
+          const enabled = isVersionEnabled(v);
+          const vs = versionStatuses.find((s) => s.version === v);
+          const isFinalized = vs?.status === "FINALIZED";
+          return (
+            <button
+              key={v}
+              onClick={() => enabled && setCurrentVersion(v)}
+              disabled={!enabled}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                currentVersion === v
+                  ? "bg-accent text-background"
+                  : enabled
+                    ? isFinalized
+                      ? "text-success hover:bg-success/10"
+                      : "text-muted hover:text-foreground"
+                    : "text-muted/30 cursor-not-allowed"
+              }`}
+            >
+              {!enabled && <Lock className="w-3 h-3" />}
+              {isFinalized && currentVersion !== v && <CheckCircle2 className="w-3 h-3" />}
+              V{v}
+            </button>
+          );
+        })}
       </div>
 
       {/* Missed Days Banner */}
       <MissedDayBanner
         missedDates={missedDates}
-        onNavigate={setCurrentDate}
+        onNavigate={(d) => { setCurrentDate(d); setCurrentVersion(1); }}
       />
 
       {/* Summary Card */}
@@ -191,7 +277,7 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
       {/* Groups */}
       <div className="space-y-3">
         <h2 className="text-lg font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>
-          Payment Groups
+          Payment Groups — V{currentVersion}
         </h2>
 
         <motion.div className="space-y-3">
@@ -211,6 +297,7 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
                   handleAmountChange(memberId, amount, group.id)
                 }
                 onLockEntry={handleLockEntry}
+                onUnlockEntry={handleUnlockEntry}
                 onSubmitGroup={() => handleSubmitGroup(group.id)}
               />
             </motion.div>
@@ -243,15 +330,10 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
           >
             {submitting ? (
               <Loader2 className="w-5 h-5 animate-spin" />
-            ) : isDayFinalized ? (
-              <>
-                <CheckCircle2 className="w-5 h-5" />
-                Day Finalized
-              </>
             ) : (
               <>
                 <Send className="w-5 h-5" />
-                Final Submit — All Groups
+                Final Submit — V{currentVersion}
               </>
             )}
           </button>
@@ -267,9 +349,14 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-success/10 text-success border border-success/20">
             <CheckCircle2 className="w-5 h-5" />
             <span className="text-sm font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>
-              Day Finalized Successfully
+              V{currentVersion} Finalized Successfully
             </span>
           </div>
+          {currentVersion < 3 && (
+            <p className="text-xs text-muted mt-2">
+              V{currentVersion + 1} is now unlocked
+            </p>
+          )}
         </motion.div>
       )}
     </div>
