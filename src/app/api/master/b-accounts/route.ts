@@ -85,11 +85,6 @@ export async function GET(req: NextRequest) {
     const groupSubmissions = groupSubMap.get(ba.id) || [];
     const daySubmissions = daySubMap.get(ba.id) || [];
 
-    // Overall totals (all versions summed)
-    const pTotal = entries.reduce((sum, e) => sum + e.amount, 0);
-    const nTotal = nEntries.reduce((sum, e) => sum + e.amount, 0);
-    const qTotal = qEntries.reduce((sum, e) => sum + e.amount, 0);
-
     // Per-version breakdown
     const versions = [1, 2, 3].map((v) => {
       const vEntries = entries.filter((e) => e.version === v);
@@ -110,8 +105,12 @@ export async function GET(req: NextRequest) {
         difference: (vP + vQ) - vN,
         status: vDaySub?.status || "NOT_STARTED",
         submittedGroups,
+        hasData: vP > 0 || vN > 0 || vQ > 0,
       };
     });
+
+    // Find the latest version with any data (even partial)
+    const latestActiveVersion = [...versions].reverse().find((v) => v.hasData) || versions[0];
 
     const submittedGroups = new Set(
       groupSubmissions.filter((s) => s.status === "SUBMITTED").map((s) => s.pGroupId)
@@ -125,10 +124,11 @@ export async function GET(req: NextRequest) {
       pGroupCount: ba.pGroups.length,
       submittedGroups,
       status: latestDaySub?.status || "NOT_STARTED",
-      pTotal,
-      nTotal,
-      qTotal,
-      difference: (pTotal + qTotal) - nTotal,
+      pTotal: latestActiveVersion.pTotal,
+      nTotal: latestActiveVersion.nTotal,
+      qTotal: latestActiveVersion.qTotal,
+      difference: latestActiveVersion.difference,
+      latestVersion: latestActiveVersion.version,
       nNameCount: ba.nNames.length,
       qNameCount: ba.qNames.length,
       versions,

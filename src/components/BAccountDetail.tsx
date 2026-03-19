@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, CheckCircle2, Clock, AlertTriangle, Lock, Unlock, Info, ChevronDown } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, AlertTriangle, Lock, Unlock, Info, ChevronDown, StickyNote } from "lucide-react";
 import LockToggle from "./LockToggle";
 import { useRouter } from "next/navigation";
 import DateNavigation from "./DateNavigation";
@@ -97,6 +97,9 @@ export default function BAccountDetail({
   const [optimisticNLocks, setOptimisticNLocks] = useState<Record<string, boolean>>({});
   const [optimisticQLocks, setOptimisticQLocks] = useState<Record<string, boolean>>({});
   const [selectedVersion, setSelectedVersion] = useState(initialVersion || 1);
+  const [showNote, setShowNote] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
   const router = useRouter();
 
   const detailKey = `/api/master/b-account-detail?bAccountId=${bAccountId}&date=${currentDate}`;
@@ -104,6 +107,30 @@ export default function BAccountDetail({
     revalidateOnFocus: true,
     dedupingInterval: 5000,
   });
+
+  // Version notes
+  const noteKey = `/api/master/version-notes?bAccountId=${bAccountId}&date=${currentDate}&version=${selectedVersion}`;
+  const { data: noteData } = useSWR<{ note: string }>(noteKey, fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 10000,
+  });
+
+  useEffect(() => {
+    setNoteText(noteData?.note || "");
+  }, [noteData?.note]);
+
+  const saveNote = async () => {
+    setSavingNote(true);
+    try {
+      await fetch("/api/master/version-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bAccountId, date: currentDate, version: selectedVersion, note: noteText }),
+      });
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   const bAccount = data?.bAccount || null;
   const entries = data?.entries || [];
@@ -358,6 +385,58 @@ export default function BAccountDetail({
             <p className="text-[10px] text-muted">(P + Q) - N</p>
           </div>
         </div>
+      </div>
+
+      {/* Version Note */}
+      <div className="glass-card overflow-hidden">
+        <button
+          onClick={() => setShowNote(!showNote)}
+          className="w-full flex items-center justify-between p-4 hover:bg-surface-hover/50 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <StickyNote className={`w-4 h-4 ${showNote ? "text-accent" : "text-muted"}`} />
+            <span className="text-sm font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>
+              Note — V{selectedVersion}
+            </span>
+            {noteData?.note && !showNote && (
+              <span className="text-[10px] text-accent bg-accent/10 px-1.5 py-0.5 rounded">has note</span>
+            )}
+          </div>
+          <motion.div animate={{ rotate: showNote ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown className="w-4 h-4 text-muted" />
+          </motion.div>
+        </button>
+        <AnimatePresence>
+          {showNote && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="px-4 pb-4 space-y-2">
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Add a note for this version (e.g., why amounts changed)..."
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-xl bg-background border border-border text-sm resize-none focus:border-accent/50 focus:ring-2 focus:ring-accent/15 focus:outline-none"
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={saveNote}
+                    disabled={savingNote}
+                    className="px-4 py-1.5 rounded-lg bg-accent text-background text-xs font-semibold hover:bg-accent/90 transition-colors disabled:opacity-50"
+                    style={{ fontFamily: 'Outfit, sans-serif' }}
+                  >
+                    {savingNote ? "Saving..." : "Save Note"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* N-Names */}

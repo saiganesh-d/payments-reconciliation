@@ -26,7 +26,7 @@ export default function LockToggle({ isLocked, disabled, onToggle }: LockToggleP
       title={disabled ? "Enter amount first" : isLocked ? "Tap to unlock" : "Tap to lock"}
     >
       <motion.div
-        className={`absolute top-[3px] w-[22px] h-[22px] rounded-[6px] shadow-sm ${
+        className={`absolute top-[3px] w-[22px] h-[22px] rounded-full shadow-sm ${
           isLocked
             ? "bg-white"
             : "bg-[#5a6070]"

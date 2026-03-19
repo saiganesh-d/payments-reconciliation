@@ -158,6 +158,18 @@ model pc_daily_q_entries {
   @@unique([date, qNameId, version])
 }
 
+model pc_version_notes {
+  id         String   @id @default(cuid())
+  date       DateTime @db.Date
+  bAccountId String
+  version    Int      @default(1)
+  note       String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([date, bAccountId, version])
+}
+
 model pc_audit_logs {
   id         String   @id @default(cuid())
   timestamp  DateTime @default(now())

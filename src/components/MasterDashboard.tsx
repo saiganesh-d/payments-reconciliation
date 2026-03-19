@@ -31,6 +31,7 @@ interface BAccountSummary {
   nTotal: number;
   qTotal: number;
   difference: number;
+  latestVersion?: number;
   nNameCount: number;
   qNameCount: number;
   versions: VersionBreakdown[];
@@ -204,6 +205,11 @@ export default function MasterDashboard() {
                         <span className="text-xs text-muted">
                           {ba.submittedGroups}/{ba.pGroupCount} groups
                         </span>
+                        {ba.latestVersion && ba.latestVersion > 0 && (
+                          <span className="text-[10px] font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded">
+                            V{ba.latestVersion}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

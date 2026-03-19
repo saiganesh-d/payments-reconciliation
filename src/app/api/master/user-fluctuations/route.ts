@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
         date: { gte: start, lte: end },
         ...(pGroupId ? { pGroupId } : {}),
       },
-      select: { date: true, memberId: true, pGroupId: true, amount: true },
+      select: { date: true, memberId: true, pGroupId: true, amount: true, version: true },
     }),
     prisma.pc_p_groups.findMany({
       where: { bAccountId },
@@ -57,19 +57,42 @@ export async function GET(req: NextRequest) {
   }
   const activeDates = [...activeDatesSet].sort();
 
+  // Build version-date slots: e.g., "2026-03-18 V1", "2026-03-18 V2"
+  const versionDateSlots = new Set<string>();
+  for (const e of entries) {
+    const dateStr = e.date.toISOString().split("T")[0];
+    versionDateSlots.add(`${dateStr}|${e.version}`);
+  }
+  const sortedSlots = [...versionDateSlots].sort();
+
   if (activeDates.length === 0) {
     return NextResponse.json({
       topFluctuators: [],
       activeDates,
+      versionSlots: [],
       totalMembers: memberNameMap.size,
       flaggedCount: 0,
     });
   }
 
-  // Aggregate: Map<memberId, Map<dateStr, totalAmount>> — sums across versions
+  // Aggregate per member per date-version slot
+  // key: memberId -> Map<"date|version", amount>
+  const memberSlotMap = new Map<string, Map<string, number>>();
+  // Also keep the summed-across-versions map for fluctuation calc
   const memberDailyMap = new Map<string, Map<string, number>>();
+
   for (const e of entries) {
     const dateStr = e.date.toISOString().split("T")[0];
+    const slotKey = `${dateStr}|${e.version}`;
+
+    // Per-slot
+    if (!memberSlotMap.has(e.memberId)) {
+      memberSlotMap.set(e.memberId, new Map());
+    }
+    const slotMap = memberSlotMap.get(e.memberId)!;
+    slotMap.set(slotKey, (slotMap.get(slotKey) || 0) + e.amount);
+
+    // Per-day (summed across versions, for fluctuation calc)
     if (!memberDailyMap.has(e.memberId)) {
       memberDailyMap.set(e.memberId, new Map());
     }
@@ -77,8 +100,12 @@ export async function GET(req: NextRequest) {
     dailyMap.set(dateStr, (dailyMap.get(dateStr) || 0) + e.amount);
   }
 
-  // Compute fluctuation per member
-  // For active dates where a member has no entry, they get 0
+  interface VersionAmount {
+    date: string;
+    version: number;
+    amount: number;
+  }
+
   interface MemberFluctuation {
     memberId: string;
     memberName: string;
@@ -89,6 +116,7 @@ export async function GET(req: NextRequest) {
     fluctuationPct: number;
     activeDays: number;
     dailyAmounts: { date: string; amount: number }[];
+    versionAmounts: VersionAmount[];
   }
 
   const allMembers: MemberFluctuation[] = [];
@@ -98,11 +126,17 @@ export async function GET(req: NextRequest) {
     const sum = amounts.reduce((a, b) => a + b, 0);
     const mean = sum / amounts.length;
 
-    if (mean === 0) continue; // skip members with zero total
+    if (mean === 0) continue;
 
     const min = Math.min(...amounts);
     const max = Math.max(...amounts);
     const fluctuationPct = ((max - min) / mean) * 100;
+
+    const slotMap = memberSlotMap.get(memberId)!;
+    const versionAmounts: VersionAmount[] = sortedSlots.map((slot) => {
+      const [date, ver] = slot.split("|");
+      return { date, version: parseInt(ver, 10), amount: slotMap.get(slot) || 0 };
+    });
 
     allMembers.push({
       memberId,
@@ -117,20 +151,21 @@ export async function GET(req: NextRequest) {
         date,
         amount: dailyMap.get(date) || 0,
       })),
+      versionAmounts,
     });
   }
 
-  // Sort by fluctuation desc
   allMembers.sort((a, b) => b.fluctuationPct - a.fluctuationPct);
-
   const flaggedCount = allMembers.filter((m) => m.fluctuationPct >= fluctuationCutoff).length;
-
-  // Return top N with daily amounts, rest without
   const topFluctuators = allMembers.slice(0, topN);
 
   return NextResponse.json({
     topFluctuators,
     activeDates,
+    versionSlots: sortedSlots.map((s) => {
+      const [date, version] = s.split("|");
+      return { date, version: parseInt(version, 10), label: `${date.slice(5)} V${version}` };
+    }),
     totalMembers: memberDailyMap.size,
     flaggedCount,
   });
