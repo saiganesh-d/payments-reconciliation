@@ -22,12 +22,12 @@ async function main() {
   console.log("Created B-Accounts:", b1.name, b2.name);
 
   // Create Master user
-  const masterPassword = await bcrypt.hash("master@1234", 10);
+  const masterPassword = await bcrypt.hash("master@123", 10);
   await prisma.pc_users.upsert({
-    where: { email: "master@71bay" },
+    where: { username: "master@71bay" },
     update: { password: masterPassword },
     create: {
-      email: "master@71bay",
+      username: "master@71bay",
       password: masterPassword,
       name: "Master Admin",
       role: "MASTER",
@@ -35,12 +35,12 @@ async function main() {
   });
 
   // Create B1 user
-  const b1Password = await bcrypt.hash("b1@1234", 10);
+  const b1Password = await bcrypt.hash("b1pass", 10);
   await prisma.pc_users.upsert({
-    where: { email: "b1user" },
+    where: { username: "b1user" },
     update: { password: b1Password },
     create: {
-      email: "b1user",
+      username: "b1user",
       password: b1Password,
       name: "B1 Manager",
       role: "B_ACCOUNT",
@@ -49,12 +49,12 @@ async function main() {
   });
 
   // Create B2 user
-  const b2Password = await bcrypt.hash("b2@1234", 10);
+  const b2Password = await bcrypt.hash("b2pass", 10);
   await prisma.pc_users.upsert({
-    where: { email: "b2user" },
+    where: { username: "b2user" },
     update: { password: b2Password },
     create: {
-      email: "b2user",
+      username: "b2user",
       password: b2Password,
       name: "B2 Manager",
       role: "B_ACCOUNT",
@@ -139,9 +139,9 @@ async function main() {
   console.log("Created N-Names");
   console.log("\n--- Seed Complete ---");
   console.log("Login credentials:");
-  console.log("  Master: master@71bay / master@1234");
-  console.log("  B1:     b1user / b1@1234");
-  console.log("  B2:     b2user / b2@1234");
+  console.log("  Master: master@71bay / master@123");
+  console.log("  B1:     b1user / b1pass");
+  console.log("  B2:     b2user / b2pass");
 }
 
 main()

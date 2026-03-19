@@ -25,12 +25,13 @@ enum DayStatus {
 
 model pc_users {
   id         String   @id @default(cuid())
-  email      String   @unique
+  username   String   @unique
   password   String
   name       String
   role       Role
   bAccountId String?
   bAccount   pc_b_accounts? @relation(fields: [bAccountId], references: [id])
+  sessions   pc_sessions[]
   createdAt  DateTime @default(now())
 }
 
@@ -168,6 +169,21 @@ model pc_version_notes {
   updatedAt  DateTime @updatedAt
 
   @@unique([date, bAccountId, version])
+}
+
+model pc_sessions {
+  id           String   @id @default(cuid())
+  userId       String
+  user         pc_users @relation(fields: [userId], references: [id])
+  token        String   @unique
+  deviceInfo   String?
+  lastActiveAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
 }
 
 model pc_audit_logs {

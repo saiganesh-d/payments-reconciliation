@@ -4,18 +4,24 @@ import { createSession } from "@/lib/session";
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json();
+    const { username, password } = await req.json();
 
-    if (!email || !password) {
-      return NextResponse.json({ error: "Email and password required" }, { status: 400 });
+    if (!username || !password) {
+      return NextResponse.json({ error: "Username and password required" }, { status: 400 });
     }
 
-    const user = await authenticateUser(email, password);
+    const user = await authenticateUser(username, password);
     if (!user) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    await createSession(user);
+    const userAgent = req.headers.get("user-agent") || "Unknown device";
+    const deviceInfo = userAgent.substring(0, 200);
+
+    const result = await createSession(user, deviceInfo);
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 429 });
+    }
 
     return NextResponse.json({
       id: user.id,

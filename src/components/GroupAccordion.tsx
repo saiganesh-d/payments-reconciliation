@@ -224,8 +224,8 @@ export default function GroupAccordion({
                   >
                     <div className="flex items-center gap-3 p-3 sm:p-4">
                       {/* Name + Note */}
-                      <div className="min-w-0 flex items-center gap-1.5 w-[100px] sm:w-[140px] shrink-0">
-                        <span className={`text-sm font-medium truncate ${isLocked ? "text-muted" : ""}`}>
+                      <div className="flex items-center gap-1.5 w-[110px] sm:w-[150px] shrink-0 min-w-0">
+                        <span className={`text-sm font-medium truncate block min-w-0 ${isLocked ? "text-muted" : ""}`}>
                           {member.name}
                         </span>
                         {member.note && <NoteTooltip note={member.note} />}

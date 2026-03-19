@@ -47,19 +47,9 @@ export default function AppShell({ children, user }: AppShellProps) {
           {/* Left: Brand */}
           <div className="flex items-center gap-3">
             <Link href={isMaster ? "/master" : "/dashboard"} className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
-                  <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                </svg>
-              </div>
-              <div>
-                <h1 className="text-base font-bold tracking-tight leading-none" style={{ fontFamily: 'Outfit, sans-serif' }}>
-                  71<span className="text-accent">bay</span>
-                </h1>
-                <p className="text-[10px] text-muted leading-none mt-0.5">
-                  {isMaster ? "Master Console" : "Account Portal"}
-                </p>
-              </div>
+              <h1 className="text-lg font-bold tracking-tight leading-none" style={{ fontFamily: 'Outfit, sans-serif' }}>
+                71<span className="text-accent">bay</span>
+              </h1>
             </Link>
           </div>
 
@@ -150,7 +140,7 @@ export default function AppShell({ children, user }: AppShellProps) {
                     )}
                     <span className="text-sm font-medium">{user.name}</span>
                     <span className="text-xs text-muted px-2 py-0.5 rounded bg-surface">
-                      {isMaster ? "Master" : "Account"}
+                      {isMaster ? "Master" : user.name}
                     </span>
                   </div>
                   <button

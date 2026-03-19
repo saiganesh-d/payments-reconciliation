@@ -16,9 +16,8 @@ export default async function Home() {
         <div className="text-center mb-10">
           
           <h1 className="text-3xl font-bold tracking-tight" style={{ fontFamily: 'Outfit, sans-serif' }}>
-            Pay<span className="text-accent">Sync</span>
+            71<span className="text-accent">bay</span>
           </h1>
-          <p className="text-muted mt-2 text-sm">Payment Consolidation Portal</p>
         </div>
 
         {/* Login Card */}

@@ -1,8 +1,8 @@
 import { prisma } from "./prisma";
 import bcrypt from "bcryptjs";
 
-export async function authenticateUser(email: string, password: string) {
-  const user = await prisma.pc_users.findUnique({ where: { email } });
+export async function authenticateUser(username: string, password: string) {
+  const user = await prisma.pc_users.findUnique({ where: { username } });
   if (!user) return null;
 
   const valid = await bcrypt.compare(password, user.password);
@@ -10,7 +10,7 @@ export async function authenticateUser(email: string, password: string) {
 
   return {
     id: user.id,
-    email: user.email,
+    username: user.username,
     name: user.name,
     role: user.role,
     bAccountId: user.bAccountId,

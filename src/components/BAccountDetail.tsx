@@ -643,17 +643,17 @@ export default function BAccountDetail({
                       transition={{ duration: 0.2 }}
                       className="overflow-hidden"
                     >
-                      <div className="border-t border-border/50 px-4 py-2 space-y-1">
+                      <div className="border-t border-border/50 px-4 py-2 space-y-1 overflow-visible">
                         {group.members.map((member) => {
                           const entry = groupEntries.find((e) => e.memberId === member.id);
                           return (
                             <div key={member.id} className="flex items-center justify-between py-1.5 text-xs">
-                              <span className="flex items-center gap-1">
-                                {member.name}
+                              <span className="flex items-center gap-1 min-w-0">
+                                <span className="truncate">{member.name}</span>
                                 {member.note && (
-                                  <span className="relative group/tip inline-flex cursor-help">
+                                  <span className="relative group/tip inline-flex shrink-0 cursor-help">
                                     <Info className="w-3 h-3 text-muted/50 hover:text-accent transition-colors" />
-                                    <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 hidden group-hover/tip:block z-50 px-2.5 py-1.5 rounded-lg bg-surface border border-border shadow-xl text-[10px] text-foreground whitespace-nowrap">
+                                    <span className="absolute left-0 bottom-full mb-1.5 hidden group-hover/tip:block z-[100] px-2.5 py-1.5 rounded-lg bg-surface border border-border shadow-xl text-[10px] text-foreground max-w-[200px] whitespace-normal break-words">
                                       {member.note}
                                     </span>
                                   </span>
