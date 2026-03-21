@@ -459,6 +459,8 @@ export default function BAccountDetail({
           {bAccount.nNames.map((nName) => {
             const currentAmount = nAmounts[nName.id] ?? 0;
             const savedEntry = versionNEntries.find((e) => e.nNameId === nName.id);
+            // hasValue: user has typed into this field OR a saved entry exists
+            const hasNValue = (nName.id in nAmounts) || savedEntry !== undefined;
             const isLocked = nName.id in optimisticNLocks ? optimisticNLocks[nName.id] : (savedEntry?.isLocked || false);
 
             return (
@@ -474,13 +476,13 @@ export default function BAccountDetail({
                       <input
                         type="number"
                         data-master-input={`n-${nName.id}`}
-                        value={savedEntry === undefined ? "" : currentAmount}
+                        value={hasNValue ? currentAmount : ""}
                         onChange={(e) => {
                           const raw = e.target.value;
                           setNAmounts((prev) => ({ ...prev, [nName.id]: raw === "" ? 0 : parseInt(raw) || 0 }));
                         }}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && savedEntry !== undefined && !isLocked) {
+                          if (e.key === "Enter" && hasNValue && !isLocked) {
                             e.preventDefault();
                             handleNLock(nName.id, "lock");
                           }
@@ -490,7 +492,7 @@ export default function BAccountDetail({
                         className={`w-full px-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
                           isLocked
                             ? "bg-success/5 text-success border border-success/20 cursor-not-allowed"
-                            : savedEntry !== undefined
+                            : hasNValue
                               ? "bg-accent/5 text-accent border border-accent/30 focus:border-accent/60 focus:ring-2 focus:ring-accent/15 focus:outline-none"
                               : "bg-surface border border-border text-foreground focus:border-accent/50 focus:ring-2 focus:ring-accent/15 focus:outline-none"
                         }`}
@@ -500,7 +502,7 @@ export default function BAccountDetail({
                   </div>
                   <LockToggle
                     isLocked={isLocked}
-                    disabled={(!isLocked && savedEntry === undefined) || lockingN === nName.id}
+                    disabled={(!isLocked && !hasNValue) || lockingN === nName.id}
                     onToggle={() => handleNLock(nName.id, isLocked ? "unlock" : "lock")}
                   />
                 </div>
@@ -535,6 +537,7 @@ export default function BAccountDetail({
           {bAccount.qNames.map((qName) => {
             const currentAmount = qAmounts[qName.id] ?? 0;
             const savedEntry = versionQEntries.find((e) => e.qNameId === qName.id);
+            const hasQValue = (qName.id in qAmounts) || savedEntry !== undefined;
             const isLocked = qName.id in optimisticQLocks ? optimisticQLocks[qName.id] : (savedEntry?.isLocked || false);
 
             return (
@@ -550,13 +553,13 @@ export default function BAccountDetail({
                       <input
                         type="number"
                         data-master-input={`q-${qName.id}`}
-                        value={savedEntry === undefined ? "" : currentAmount}
+                        value={hasQValue ? currentAmount : ""}
                         onChange={(e) => {
                           const raw = e.target.value;
                           setQAmounts((prev) => ({ ...prev, [qName.id]: raw === "" ? 0 : parseInt(raw) || 0 }));
                         }}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && savedEntry !== undefined && !isLocked) {
+                          if (e.key === "Enter" && hasQValue && !isLocked) {
                             e.preventDefault();
                             handleQLock(qName.id, "lock");
                           }
@@ -566,7 +569,7 @@ export default function BAccountDetail({
                         className={`w-full px-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
                           isLocked
                             ? "bg-success/5 text-success border border-success/20 cursor-not-allowed"
-                            : savedEntry !== undefined
+                            : hasQValue
                               ? "bg-accent/5 text-accent border border-accent/30 focus:border-accent/60 focus:ring-2 focus:ring-accent/15 focus:outline-none"
                               : "bg-surface border border-border text-foreground focus:border-accent/50 focus:ring-2 focus:ring-accent/15 focus:outline-none"
                         }`}
@@ -576,7 +579,7 @@ export default function BAccountDetail({
                   </div>
                   <LockToggle
                     isLocked={isLocked}
-                    disabled={(!isLocked && savedEntry === undefined) || lockingQ === qName.id}
+                    disabled={(!isLocked && !hasQValue) || lockingQ === qName.id}
                     onToggle={() => handleQLock(qName.id, isLocked ? "unlock" : "lock")}
                   />
                 </div>
