@@ -22,9 +22,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Already locked" }, { status: 400 });
   }
 
-  if (!entry.amount || entry.amount === 0) {
-    return NextResponse.json({ error: "Cannot lock zero amount" }, { status: 400 });
-  }
+  // 0 is a valid amount — allow locking
 
   const updated = await prisma.pc_daily_entries.update({
     where: { id: entry.id },

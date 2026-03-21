@@ -6,9 +6,8 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function getISTDate(): string {
-  const now = new Date();
-  const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  return ist.toISOString().split("T")[0];
+  // en-CA gives YYYY-MM-DD format directly — no UTC round-trip bug
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
 }
 
 // Shift a YYYY-MM-DD date string by N days (negative = past)
