@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import ManageGroups from "./ManageGroups";
+import { getISTDate } from "@/lib/utils";
 
 interface BAccount {
   id: string;
@@ -59,7 +60,7 @@ export default function MasterManage() {
   const fetchBAccounts = useCallback(async () => {
     setLoading(true);
     try {
-      const today = new Date().toISOString().split("T")[0];
+      const today = getISTDate();
       const res = await fetch(`/api/master/b-accounts?date=${today}`);
       const data = await res.json();
       setBAccounts(data);

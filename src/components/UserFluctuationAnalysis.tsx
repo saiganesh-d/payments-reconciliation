@@ -7,7 +7,7 @@ import {
   ResponsiveContainer, CartesianGrid, Cell, Legend,
 } from "recharts";
 import { fetcher } from "@/lib/fetcher";
-import { getISTDate, formatCurrency } from "@/lib/utils";
+import { getISTDate, shiftDate, formatCurrency } from "@/lib/utils";
 
 interface BAccountOption {
   id: string;
@@ -86,13 +86,9 @@ export default function UserFluctuationAnalysis() {
   }, [bAccounts, bAccountId]);
 
   const { startDate, endDate } = useMemo(() => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 7);
-    return {
-      startDate: start.toISOString().split("T")[0],
-      endDate: end.toISOString().split("T")[0],
-    };
+    const endDate = getISTDate();
+    const startDate = shiftDate(endDate, -7);
+    return { startDate, endDate };
   }, []);
 
   const { data, isLoading } = useSWR<FluctuationData>(

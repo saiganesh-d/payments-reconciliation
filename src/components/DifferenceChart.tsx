@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid, Cell,
 } from "recharts";
 import { fetcher } from "@/lib/fetcher";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getISTDate, shiftDate } from "@/lib/utils";
 
 interface ChartDataPoint {
   date: string;
@@ -28,13 +28,9 @@ export default function DifferenceChart() {
     if (range === "custom" && customStart && customEnd) {
       return { startDate: customStart, endDate: customEnd };
     }
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - (range === "30d" ? 30 : 7));
-    return {
-      startDate: start.toISOString().split("T")[0],
-      endDate: end.toISOString().split("T")[0],
-    };
+    const endDate = getISTDate();
+    const startDate = shiftDate(endDate, range === "30d" ? -30 : -7);
+    return { startDate, endDate };
   }, [range, customStart, customEnd]);
 
   const shouldFetch = range !== "custom" || (customStart && customEnd);

@@ -11,6 +11,17 @@ export function getISTDate(): string {
   return ist.toISOString().split("T")[0];
 }
 
+// Shift a YYYY-MM-DD date string by N days (negative = past)
+export function shiftDate(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m - 1, d + days);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 export function formatDate(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString("en-IN", {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { getISTDate } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -8,13 +9,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Use IST today so the date is never off by 1 before 5:30 AM IST
+  const todayIST = getISTDate(); // "YYYY-MM-DD"
+  const today = new Date(todayIST + "T00:00:00.000Z");
 
   const dates: Date[] = [];
   for (let i = 1; i <= 7; i++) {
     const d = new Date(today);
-    d.setDate(d.getDate() - i);
+    d.setUTCDate(d.getUTCDate() - i);
     dates.push(d);
   }
 
