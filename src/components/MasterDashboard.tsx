@@ -48,7 +48,7 @@ export default function MasterDashboard() {
   const { data: bAccounts = [], isLoading } = useSWR<BAccountSummary[]>(
     `/api/master/b-accounts?date=${currentDate}`,
     fetcher,
-    { revalidateOnFocus: true, dedupingInterval: 5000 }
+    { revalidateOnFocus: true, dedupingInterval: 5000, refreshInterval: 10000 }
   );
 
   const totalPAmount = bAccounts.reduce((sum, ba) => sum + ba.pTotal, 0);
@@ -217,24 +217,24 @@ export default function MasterDashboard() {
                 </div>
 
                 {/* Overall totals */}
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="bg-background/50 rounded-xl p-3">
                     <p className="text-[10px] text-muted uppercase">P</p>
-                    <p className="text-sm font-bold mt-0.5">{formatCurrency(ba.pTotal)}</p>
+                    <p className="text-sm font-bold mt-0.5 tabular-nums">{formatCurrency(ba.pTotal)}</p>
                   </div>
                   <div className="bg-background/50 rounded-xl p-3">
                     <p className="text-[10px] text-muted uppercase">Q</p>
-                    <p className="text-sm font-bold mt-0.5">{formatCurrency(ba.qTotal)}</p>
+                    <p className="text-sm font-bold mt-0.5 tabular-nums">{formatCurrency(ba.qTotal)}</p>
                   </div>
                   <div className="bg-background/50 rounded-xl p-3">
                     <p className="text-[10px] text-muted uppercase">N</p>
-                    <p className="text-sm font-bold mt-0.5">{formatCurrency(ba.nTotal)}</p>
+                    <p className="text-sm font-bold mt-0.5 tabular-nums">{formatCurrency(ba.nTotal)}</p>
                   </div>
                   <div className={`rounded-xl p-3 ${
                     isMatch ? "bg-success/10" : !hasDifference ? "bg-background/50" : "bg-danger/10"
                   }`}>
                     <p className="text-[10px] text-muted uppercase">Diff</p>
-                    <p className={`text-sm font-bold mt-0.5 ${
+                    <p className={`text-sm font-bold mt-0.5 tabular-nums ${
                       isMatch ? "text-success" : !hasDifference ? "text-muted" : "text-danger"
                     }`}>
                       {ba.difference === 0 ? "0" : formatCurrency(Math.abs(ba.difference))}
@@ -277,7 +277,7 @@ export default function MasterDashboard() {
                         }`}>
                           V{v.version}
                         </div>
-                        <div className="flex-1 grid grid-cols-4 gap-2 text-xs">
+                        <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                           <div>
                             <span className="text-muted">P:</span>{" "}
                             <span className="font-semibold">{formatCurrency(v.pTotal)}</span>

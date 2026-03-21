@@ -92,7 +92,12 @@ export async function GET(req: NextRequest) {
       const vQEntries = qEntries.filter((e) => e.version === v);
       const vDaySub = daySubmissions.find((d) => d.version === v);
       const vGroupSubs = groupSubmissions.filter((s) => s.version === v);
-      const vP = vEntries.reduce((sum, e) => sum + e.amount, 0);
+      const activeMemberIds = new Set(
+        ba.pGroups.flatMap((g) => g.members.map((m: { id: string }) => m.id))
+      );
+      const vP = vEntries
+        .filter((e) => activeMemberIds.has(e.memberId))
+        .reduce((sum, e) => sum + e.amount, 0);
       const vN = vNEntries.reduce((sum, e) => sum + e.amount, 0);
       const vQ = vQEntries.reduce((sum, e) => sum + e.amount, 0);
       const submittedGroups = vGroupSubs.filter((s) => s.status === "SUBMITTED").length;

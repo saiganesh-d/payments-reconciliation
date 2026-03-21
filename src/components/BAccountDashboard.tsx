@@ -54,12 +54,14 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
   const { data: versionStatuses = [] } = useSWR<VersionStatus[]>(versionsKey, fetcher, {
     revalidateOnFocus: true,
     dedupingInterval: 5000,
+    refreshInterval: 10000,
   });
 
   const entriesKey = `/api/entries?date=${currentDate}&version=${currentVersion}`;
   const { data, isLoading, mutate: mutateEntries } = useSWR<EntriesData>(entriesKey, fetcher, {
     revalidateOnFocus: true,
     dedupingInterval: 5000,
+    refreshInterval: 10000,
   });
 
   const groups = data?.groups || [];
@@ -194,7 +196,10 @@ export default function BAccountDashboard({ bAccountId }: { bAccountId: string }
     }
   };
 
-  const totalAmount = entries.reduce((sum, e) => sum + (e.amount || 0), 0);
+  const activeMemberIds = new Set(groups.flatMap((g) => g.members.map((m) => m.id)));
+  const totalAmount = entries
+    .filter((e) => activeMemberIds.has(e.memberId))
+    .reduce((sum, e) => sum + (e.amount || 0), 0);
   const submittedGroupIds = groupSubmissions
     .filter((s) => s.status === "SUBMITTED")
     .map((s) => s.pGroupId);

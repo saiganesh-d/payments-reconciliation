@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 // The actual session validation (DB check, inactivity timeout) happens in getSession().
 // This middleware just provides fast redirects for unauthenticated users.
 export function middleware(request: NextRequest) {
-  const token = request.cookies.get("pc_session_token") || request.cookies.get("pc_session");
+  const token = request.cookies.get("pc_session_token");
   const { pathname } = request.nextUrl;
 
   // Public routes that don't need auth
@@ -18,10 +18,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // If no session token, redirect to login
+  // If no session token, redirect to login and clear any stale cookies
   if (!token) {
     const loginUrl = new URL("/", request.url);
-    return NextResponse.redirect(loginUrl);
+    const response = NextResponse.redirect(loginUrl);
+    response.cookies.delete("pc_session");
+    response.cookies.delete("pc_session_token");
+    return response;
   }
 
   return NextResponse.next();

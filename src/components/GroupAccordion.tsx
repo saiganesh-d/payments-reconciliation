@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Check, Users, Info } from "lucide-react";
+import { ChevronDown, Check, Users } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import LockToggle from "./LockToggle";
 
@@ -33,33 +33,6 @@ interface GroupAccordionProps {
   onSubmitGroup: () => void;
 }
 
-function NoteTooltip({ note }: { note: string }) {
-  const [show, setShow] = useState(false);
-
-  return (
-    <span className="relative inline-flex">
-      <button
-        onClick={(e) => { e.stopPropagation(); setShow(!show); }}
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-        className="p-0.5 text-muted/60 hover:text-accent transition-colors"
-        type="button"
-      >
-        <Info className="w-3.5 h-3.5" />
-      </button>
-      {show && (
-        <div
-          className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 px-3 py-2 rounded-lg bg-surface border border-border shadow-2xl text-xs text-foreground max-w-[220px] text-center animate-in fade-in duration-100"
-          style={{ whiteSpace: "normal", wordBreak: "break-word" }}
-        >
-          {note}
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-b-[5px] border-b-border" />
-        </div>
-      )}
-    </span>
-  );
-}
-
 // Focus the next entry input in the DOM
 function focusNextEntry(currentMemberId: string) {
   const allInputs = Array.from(
@@ -86,7 +59,6 @@ export default function GroupAccordion({
   onSubmitGroup,
 }: GroupAccordionProps) {
   const [isOpen, setIsOpen] = useState(false);
-  // Optimistic lock state — tracks members being optimistically toggled
   const [optimisticLocks, setOptimisticLocks] = useState<Record<string, boolean>>({});
 
   const getEntry = (memberId: string) =>
@@ -99,19 +71,22 @@ export default function GroupAccordion({
 
   const allLocked = group.members.every((m) => isEntryLocked(m.id));
 
-  const totalAmount = entries.reduce((sum, e) => sum + (e.amount || 0), 0);
+  // Only count active members' entries for total
+  const activeMemberIds = new Set(group.members.map((m) => m.id));
+  const totalAmount = entries
+    .filter((e) => activeMemberIds.has(e.memberId))
+    .reduce((sum, e) => sum + (e.amount || 0), 0);
   const lockedCount = group.members.filter((m) => isEntryLocked(m.id)).length;
   const totalMembers = group.members.length;
 
   const handleToggleLock = async (memberId: string, currentlyLocked: boolean, amount: number) => {
-    if (!currentlyLocked && !amount) return;
+    // Allow 0 — only block if no entry exists yet
+    if (!currentlyLocked && getEntry(memberId) === undefined) return;
 
-    // Optimistic: update immediately
     const newState = !currentlyLocked;
     setOptimisticLocks((prev) => ({ ...prev, [memberId]: newState }));
 
     if (newState) {
-      // Locking — also focus next entry
       focusNextEntry(memberId);
     }
 
@@ -121,14 +96,12 @@ export default function GroupAccordion({
         : await onUnlockEntry(memberId);
 
       if (!success) {
-        // Revert on failure
         setOptimisticLocks((prev) => {
           const next = { ...prev };
           delete next[memberId];
           return next;
         });
       } else {
-        // Clear optimistic state — real state will take over from SWR
         setOptimisticLocks((prev) => {
           const next = { ...prev };
           delete next[memberId];
@@ -136,7 +109,6 @@ export default function GroupAccordion({
         });
       }
     } catch {
-      // Revert on error
       setOptimisticLocks((prev) => {
         const next = { ...prev };
         delete next[memberId];
@@ -210,7 +182,7 @@ export default function GroupAccordion({
               {group.members.map((member) => {
                 const entry = getEntry(member.id);
                 const isLocked = isEntryLocked(member.id);
-                const amount = entry?.amount || 0;
+                const amount = entry?.amount ?? 0;
                 const isReadOnly = isLocked || isDayFinalized;
 
                 return (
@@ -223,12 +195,16 @@ export default function GroupAccordion({
                     }`}
                   >
                     <div className="flex items-center gap-3 p-3 sm:p-4">
-                      {/* Name + Note */}
-                      <div className="flex items-center gap-1.5 w-[110px] sm:w-[150px] shrink-0 min-w-0">
-                        <span className={`text-sm font-medium truncate block min-w-0 ${isLocked ? "text-muted" : ""}`}>
+                      {/* Name + Note (shown below name) */}
+                      <div className="flex flex-col min-w-0 w-[110px] sm:w-[150px] shrink-0">
+                        <span className={`text-sm font-medium truncate ${isLocked ? "text-muted" : ""}`}>
                           {member.name}
                         </span>
-                        {member.note && <NoteTooltip note={member.note} />}
+                        {member.note && (
+                          <span className="text-[10px] text-muted/70 truncate leading-tight mt-0.5">
+                            {member.note}
+                          </span>
+                        )}
                       </div>
 
                       {/* Amount Input */}
@@ -237,10 +213,13 @@ export default function GroupAccordion({
                           <input
                             type="number"
                             data-entry-input={member.id}
-                            value={amount || ""}
-                            onChange={(e) => onAmountChange(member.id, parseInt(e.target.value) || 0)}
+                            value={entry === undefined ? "" : amount}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              onAmountChange(member.id, raw === "" ? 0 : parseInt(raw) || 0);
+                            }}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter" && amount && !isLocked && !isDayFinalized) {
+                              if (e.key === "Enter" && entry !== undefined && !isLocked && !isDayFinalized) {
                                 e.preventDefault();
                                 handleToggleLock(member.id, false, amount);
                               }
@@ -250,7 +229,7 @@ export default function GroupAccordion({
                             className={`w-full px-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
                               isLocked
                                 ? "bg-success/5 text-success border border-success/20 cursor-not-allowed"
-                                : amount
+                                : entry !== undefined
                                   ? "bg-accent/5 text-accent border border-accent/30 focus:border-accent/60 focus:ring-2 focus:ring-accent/15 focus:outline-none"
                                   : "bg-surface border border-border text-foreground focus:border-accent/50 focus:ring-2 focus:ring-accent/15 focus:outline-none"
                             }`}
@@ -263,7 +242,7 @@ export default function GroupAccordion({
                       {!isDayFinalized ? (
                         <LockToggle
                           isLocked={isLocked}
-                          disabled={!isLocked && !amount}
+                          disabled={!isLocked && entry === undefined}
                           onToggle={() => handleToggleLock(member.id, isLocked, amount)}
                         />
                       ) : (

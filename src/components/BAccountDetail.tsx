@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, CheckCircle2, Clock, AlertTriangle, Lock, Unlock, Info, ChevronDown, StickyNote } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, AlertTriangle, Lock, Unlock, ChevronDown, StickyNote } from "lucide-react";
 import LockToggle from "./LockToggle";
 import { useRouter } from "next/navigation";
 import DateNavigation from "./DateNavigation";
@@ -106,6 +106,7 @@ export default function BAccountDetail({
   const { data, isLoading, mutate: mutateDetail } = useSWR<DetailData>(detailKey, fetcher, {
     revalidateOnFocus: true,
     dedupingInterval: 5000,
+    refreshInterval: 10000,
   });
 
   // Version notes
@@ -289,8 +290,13 @@ export default function BAccountDetail({
     .filter((s) => s.status === "SUBMITTED")
     .map((s) => s.pGroupId);
 
-  // Per-version totals for difference
-  const vPTotal = versionEntries.reduce((sum, e) => sum + e.amount, 0);
+  // Only count active members' entries for totals
+  const activePMemberIds = new Set(
+    bAccount.pGroups.flatMap((g) => g.members.map((m) => m.id))
+  );
+  const vPTotal = versionEntries
+    .filter((e) => activePMemberIds.has(e.memberId))
+    .reduce((sum, e) => sum + e.amount, 0);
   const vNTotal = versionNEntries.reduce((sum, e) => sum + e.amount, 0);
   const vQTotal = versionQEntries.reduce((sum, e) => sum + e.amount, 0);
   const vDifference = (vPTotal + vQTotal) - vNTotal;
@@ -354,22 +360,22 @@ export default function BAccountDetail({
       <div className={`glass-card p-5 sm:p-6 border-2 transition-all ${
         vIsMatch ? "border-success/30" : vHasDiff ? "border-danger/30" : "border-border"
       }`}>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
             <p className="text-[10px] text-muted font-medium uppercase tracking-wider">P-Total</p>
-            <p className="text-lg font-bold mt-0.5" style={{ fontFamily: 'Outfit, sans-serif' }}>
+            <p className="text-lg font-bold mt-0.5 tabular-nums" style={{ fontFamily: 'Outfit, sans-serif' }}>
               {formatCurrency(vPTotal)}
             </p>
           </div>
           <div>
             <p className="text-[10px] text-muted font-medium uppercase tracking-wider">Q-Total</p>
-            <p className="text-lg font-bold mt-0.5" style={{ fontFamily: 'Outfit, sans-serif' }}>
+            <p className="text-lg font-bold mt-0.5 tabular-nums" style={{ fontFamily: 'Outfit, sans-serif' }}>
               {formatCurrency(vQTotal)}
             </p>
           </div>
           <div>
             <p className="text-[10px] text-muted font-medium uppercase tracking-wider">N-Total</p>
-            <p className="text-lg font-bold mt-0.5" style={{ fontFamily: 'Outfit, sans-serif' }}>
+            <p className="text-lg font-bold mt-0.5 tabular-nums" style={{ fontFamily: 'Outfit, sans-serif' }}>
               {formatCurrency(vNTotal)}
             </p>
           </div>
@@ -377,7 +383,7 @@ export default function BAccountDetail({
             vIsMatch ? "bg-success/10" : vHasDiff ? "bg-danger/10" : ""
           }`}>
             <p className="text-[10px] text-muted font-medium uppercase tracking-wider">Difference</p>
-            <p className={`text-lg font-bold mt-0.5 ${
+            <p className={`text-lg font-bold mt-0.5 tabular-nums ${
               vIsMatch ? "text-success" : vHasDiff ? "text-danger" : "text-muted"
             }`} style={{ fontFamily: 'Outfit, sans-serif' }}>
               {vDifference === 0 ? "0" : formatCurrency(Math.abs(vDifference))}
@@ -468,10 +474,13 @@ export default function BAccountDetail({
                       <input
                         type="number"
                         data-master-input={`n-${nName.id}`}
-                        value={currentAmount || ""}
-                        onChange={(e) => setNAmounts((prev) => ({ ...prev, [nName.id]: parseInt(e.target.value) || 0 }))}
+                        value={savedEntry === undefined ? "" : currentAmount}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setNAmounts((prev) => ({ ...prev, [nName.id]: raw === "" ? 0 : parseInt(raw) || 0 }));
+                        }}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && currentAmount && !isLocked) {
+                          if (e.key === "Enter" && savedEntry !== undefined && !isLocked) {
                             e.preventDefault();
                             handleNLock(nName.id, "lock");
                           }
@@ -481,7 +490,7 @@ export default function BAccountDetail({
                         className={`w-full px-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
                           isLocked
                             ? "bg-success/5 text-success border border-success/20 cursor-not-allowed"
-                            : currentAmount
+                            : savedEntry !== undefined
                               ? "bg-accent/5 text-accent border border-accent/30 focus:border-accent/60 focus:ring-2 focus:ring-accent/15 focus:outline-none"
                               : "bg-surface border border-border text-foreground focus:border-accent/50 focus:ring-2 focus:ring-accent/15 focus:outline-none"
                         }`}
@@ -491,7 +500,7 @@ export default function BAccountDetail({
                   </div>
                   <LockToggle
                     isLocked={isLocked}
-                    disabled={!isLocked && !currentAmount || lockingN === nName.id}
+                    disabled={(!isLocked && savedEntry === undefined) || lockingN === nName.id}
                     onToggle={() => handleNLock(nName.id, isLocked ? "unlock" : "lock")}
                   />
                 </div>
@@ -541,10 +550,13 @@ export default function BAccountDetail({
                       <input
                         type="number"
                         data-master-input={`q-${qName.id}`}
-                        value={currentAmount || ""}
-                        onChange={(e) => setQAmounts((prev) => ({ ...prev, [qName.id]: parseInt(e.target.value) || 0 }))}
+                        value={savedEntry === undefined ? "" : currentAmount}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setQAmounts((prev) => ({ ...prev, [qName.id]: raw === "" ? 0 : parseInt(raw) || 0 }));
+                        }}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && currentAmount && !isLocked) {
+                          if (e.key === "Enter" && savedEntry !== undefined && !isLocked) {
                             e.preventDefault();
                             handleQLock(qName.id, "lock");
                           }
@@ -554,7 +566,7 @@ export default function BAccountDetail({
                         className={`w-full px-4 py-2.5 rounded-xl text-center text-base font-bold transition-all ${
                           isLocked
                             ? "bg-success/5 text-success border border-success/20 cursor-not-allowed"
-                            : currentAmount
+                            : savedEntry !== undefined
                               ? "bg-accent/5 text-accent border border-accent/30 focus:border-accent/60 focus:ring-2 focus:ring-accent/15 focus:outline-none"
                               : "bg-surface border border-border text-foreground focus:border-accent/50 focus:ring-2 focus:ring-accent/15 focus:outline-none"
                         }`}
@@ -564,7 +576,7 @@ export default function BAccountDetail({
                   </div>
                   <LockToggle
                     isLocked={isLocked}
-                    disabled={!isLocked && !currentAmount || lockingQ === qName.id}
+                    disabled={(!isLocked && savedEntry === undefined) || lockingQ === qName.id}
                     onToggle={() => handleQLock(qName.id, isLocked ? "unlock" : "lock")}
                   />
                 </div>
@@ -599,7 +611,10 @@ export default function BAccountDetail({
           {bAccount.pGroups.map((group) => {
             const isSubmitted = submittedGroupIds.includes(group.id);
             const groupEntries = versionEntries.filter((e) => e.pGroupId === group.id);
-            const groupTotal = groupEntries.reduce((sum, e) => sum + e.amount, 0);
+            const activeGroupMemberIds = new Set(group.members.map((m) => m.id));
+            const groupTotal = groupEntries
+              .filter((e) => activeGroupMemberIds.has(e.memberId))
+              .reduce((sum, e) => sum + e.amount, 0);
             const isExpanded = expandedGroupId === group.id;
 
             return (
@@ -648,14 +663,11 @@ export default function BAccountDetail({
                           const entry = groupEntries.find((e) => e.memberId === member.id);
                           return (
                             <div key={member.id} className="flex items-center justify-between py-1.5 text-xs">
-                              <span className="flex items-center gap-1 min-w-0">
+                              <span className="flex flex-col min-w-0">
                                 <span className="truncate">{member.name}</span>
                                 {member.note && (
-                                  <span className="relative group/tip inline-flex shrink-0 cursor-help">
-                                    <Info className="w-3 h-3 text-muted/50 hover:text-accent transition-colors" />
-                                    <span className="absolute left-0 bottom-full mb-1.5 hidden group-hover/tip:block z-[100] px-2.5 py-1.5 rounded-lg bg-surface border border-border shadow-xl text-[10px] text-foreground max-w-[200px] whitespace-normal break-words">
-                                      {member.note}
-                                    </span>
+                                  <span className="text-[10px] text-muted/60 truncate leading-tight">
+                                    {member.note}
                                   </span>
                                 )}
                               </span>
