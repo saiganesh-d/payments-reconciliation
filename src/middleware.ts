@@ -10,6 +10,7 @@ export function middleware(request: NextRequest) {
   // Public routes that don't need auth
   const isPublicRoute =
     pathname === "/" ||
+    pathname === "/wa" ||
     pathname.startsWith("/api/auth/login") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon");
